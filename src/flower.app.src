@@ -1,0 +1,14 @@
+{application, flower,
+ [
+  {description, ""},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib,
+                  sasl,
+                  gen_listener_tcp
+                 ]},
+  {mod, { flower_app, []}},
+  {env, []}
+ ]}.
