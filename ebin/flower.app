@@ -5,7 +5,7 @@
    {applications,[kernel,stdlib,sasl,gen_listener_tcp]},
    {mod,{flower_app,[]}},
    {env,[]},
-   {modules,[flower_app,flower_connection,flower_flow,flower_mac_learning,
-             flower_match,flower_packet,flower_sup,flower_tcp_socket,
-             lrulist]}]
+   {modules,[flower_app,flower_connection,flower_dispatcher,flower_event,
+             flower_flow,flower_mac_learning,flower_match,flower_packet,
+             flower_sup,flower_tcp_socket,lrulist]}]
 }.

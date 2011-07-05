@@ -26,6 +26,8 @@ start_link() ->
 init([]) ->
     {ok, { {one_for_one, 5, 10}, [
                                   {flower_tcp_socket, {flower_tcp_socket, start_link, []}, permanent, brutal_kill, worker, [flower_tcp_socket]},
-                                  {flower_mac_learning, {flower_mac_learning, start_link, []}, permanent, brutal_kill, worker, [flower_mac_learning]}
+                                  {flower_mac_learning, {flower_mac_learning, start_link, []}, permanent, brutal_kill, worker, [flower_mac_learning]},
+                                  {flower_event, {flower_event, start_link, []}, permanent, brutal_kill, worker, [flower_event]},
+                                  {flower_dispatcher, {flower_dispatcher, start_link, []}, permanent, brutal_kill, worker, [flower_dispatcher]}
                                  ]} }.
 
