@@ -34,7 +34,7 @@ init([]) ->
     {ok, {?TCP_PORT, ?TCP_OPTS}, nil}.
 
 handle_accept(Sock, State) ->
-	case flower_connection:start() of
+	case flower_connection:start_connection() of
 		{ok, Pid} ->
 			flower_connection:accept(Pid, Sock);
 		_ ->

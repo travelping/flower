@@ -12,7 +12,7 @@
 
 %% API
 -export([start_link/0]).
--export([delete/1, join/1, leave/1, terminate/0]).
+-export([delete/1, join/1, leave/1, terminate/0, dispatch/4]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -33,15 +33,22 @@ start_link() ->
 	gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 delete(Event) ->
-	gen_sever:call(?SERVER, {unregister, Event}).
+	gen_server:call(?SERVER, {unregister, Event}).
 
 join(Event) ->
-	gen_sever:call(?SERVER, {join, Event}).
+	gen_server:call(?SERVER, {join, Event}).
+
 leave(Event) ->
-	gen_sever:call(?SERVER, {leave, Event}).
+	gen_server:call(?SERVER, {leave, Event}).
 
 terminate() ->
-	gen_sever:call(?SERVER, terminate).
+	gen_server:call(?SERVER, terminate).
+
+dispatch(Event, Sw, Xid, Msg) ->
+	Handlers = ets:match(?SERVER, {Event, '$1'}),
+	lists:foreach(fun([Pid]) ->
+						  gen_server:cast(Pid, {Event, Sw, Xid, Msg})
+				  end, Handlers).
 
 %%%===================================================================
 %%% gen_server functions
@@ -56,18 +63,13 @@ handle_call({delete, Event}, _From, State) ->
 	ets:delete(?SERVER, Event),
 	{reply, ok, State};
 
-handle_call({join, Event}, From, State) ->
-	Reply = do_join(Event, From),
+handle_call({join, Event}, {Pid, _Ref} = _From, State) ->
+	Reply = do_join(Event, Pid),
 	{reply, Reply, State};
 
-handle_call({leave, Event}, From, State) ->
-	Reply = do_leave(Event, From),
-	{reply, Reply, State};
-
-handle_call({dispatch, Event, Msg}, _From, State) ->
-	Handlers = ets:match(?SERVER, {Event, '$1'}),
-	lists:foreach(fun(Pid) -> gen_server:cast(Pid, {Event, Msg}) end, Handlers),
-	{reply, ok, State}.
+handle_call({leave, Event}, {Pid, _Ref} = _From, State) ->
+	Reply = do_leave(Event, Pid),
+	{reply, Reply, State}.
 
 handle_cast(terminate, State) ->
 	{stop, requested, State}.
@@ -90,7 +92,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 do_join(Event, Pid) ->
-	case flow_event:is_registered(Event) of
+	case flower_event:is_registered(Event) of
 		true ->
 			link(Pid),
 			ets:match_delete(?SERVER, {Event, Pid}),
@@ -104,4 +106,3 @@ do_leave(Event, Pid) ->
 	unlink(Pid),
 	ets:match_delete(?SERVER, {Event, Pid}),
 	ok.
-

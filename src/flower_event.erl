@@ -32,31 +32,34 @@ start_link() ->
 	gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 is_registered(Event) ->
-	gen_sever:call(?SERVER, {is_registered, Event}).
+	gen_server:call(?SERVER, {is_registered, Event}).
 
 register(Event) ->
-	gen_sever:call(?SERVER, {register, Event}).
+	gen_server:call(?SERVER, {register, Event}).
 
 unregister(Event) ->
-	gen_sever:call(?SERVER, {unregister, Event}).
+	gen_server:call(?SERVER, {unregister, Event}).
 	
 terminate(Event) ->
-	gen_sever:cast(?SERVER, {terminate, Event}).
+	gen_server:cast(?SERVER, {terminate, Event}).
 
 %%%===================================================================
 %%% gen_server functions
 %%%===================================================================
 
+default_events() ->
+	[{datapath, join}, {datapath, leave}, {packet, in}, {flow, mod}, {flow, removed}, {port, status}, {port, stats}].
+
 init([]) ->
     process_flag(trap_exit, true),
-	Events = orddict:new(),
+	Events = lists:foldl(fun(Event, Events) -> orddict:store(Event, self(), Events) end, orddict:new(), default_events()),
 	{ok, #state{events = Events}}.
 
-handle_call({register, Event}, From, #state{events = Events} = State) ->
+handle_call({register, Event}, {Pid, _Ref} = _From, #state{events = Events} = State) ->
 	case orddict:is_key(Event, Events) of
 		true ->
-			link(From),
-			Events1 = orddict:store(Event, From, Events),
+			link(Pid),
+			Events1 = orddict:store(Event, Pid, Events),
 			{reply, ok, State#state{events = Events1}};
 		false ->
 			{reply, {error, duplicate}, State}
@@ -70,9 +73,15 @@ handle_call({is_registered, Event}, _From, #state{events = Events} = State) ->
 	Reply = orddict:is_key(Event, Events),
 	{reply, Reply, State}.
 
-handle_cast({terminate, Event}, State) ->
-	gen_server:cast({terminate, Event}),
+handle_cast({terminate, Event}, #state{events = Events} = State) ->
+	case orddict:find(Event, Events) of
+		{ok, Pid} ->
+			gen_server:cast(Pid, {terminate, Event});
+		_ ->
+			ok
+	end,
 	{noreply, State};
+
 handle_cast(terminate, State) ->
 	{stop, request, State}.
 

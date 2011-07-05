@@ -15,11 +15,10 @@
 %% --------------------------------------------------------------------
 -include("flower_debug.hrl").
 -include("flower_packet.hrl").
--include("flower_flow.hrl").
 
 %% API
--export([start_link/0, start/0]).
--export([accept/2]).
+-export([start_link/0]).
+-export([start_connection/0, accept/2, send/3, send/4]).
 
 %% gen_fsm callbacks
 -export([init/1, handle_event/3,
@@ -67,12 +66,18 @@
 start_link() ->
 	gen_fsm:start_link(?MODULE, [], [?FSM_OPTS]).
 
-start() ->
-	gen_fsm:start(?MODULE, [], [?FSM_OPTS]).
+start_connection() ->
+	flower_connection_sup:start_connection(?MODULE).
 
 accept(Server, Socket) ->
     gen_tcp:controlling_process(Socket, Server),
 	gen_fsm:send_event(Server, {accept, Socket}).
+
+send(Sw, Type, Msg) ->
+	gen_fsm:send_event(Sw, {send, Type, Msg}).
+
+send(Sw, Type, Xid, Msg) ->
+	gen_fsm:send_event(Sw, {send, Type, Xid, Msg}).
 
 %%%===================================================================
 %%% gen_fsm callbacks
@@ -128,97 +133,23 @@ connected({echo_request, Xid, _Msg}, State) ->
 	send_pkt(echo_reply, Xid, <<>>, {next_state, connected, State});
 
 connected({packet_in, Xid, Msg}, State) ->
-	case Flow = (catch flower_flow:flow_extract(0, Msg#ofp_packet_in.in_port, Msg#ofp_packet_in.data)) of
-		#flow{tun_id = TunId, nw_src = NwSrc, nw_dst = NwDst, in_port = InPort, vlan_tci = VlanTci,
-			  dl_type = DlType, tp_src = TpSrc, tp_dst = TpDst, dl_src = DlSrc, dl_dst = DlDst,
-			  nw_proto = NwProto, nw_tos = NwTos, arp_sha = ArpSha, arp_tha = ArpTha} ->
-			%% choose destination...
-			Port = choose_destination(Flow),
-			Action = case Port of
-						 none -> <<>>;
-%%						 X when is_integer(X) ->
-%%							 flower_packet:encode_ofs_action_enqueue(X, 0);
-						 X ->
-							 flower_packet:encode_ofs_action_output(X, 0)
-					 end,
-			
-			if
-				Port =:= flood ->
-					%% We don't know that MAC, or we don't set up flows.  Send along the
-					%% packet without setting up a flow.
-					PktOut = flower_packet:encode_ofp_packet_out(Msg#ofp_packet_in.buffer_id, Msg#ofp_packet_in.in_port, Action, Msg#ofp_packet_in.data),
-					?DEBUG("Send: ~p~n", [PktOut]),
-					send_pkt(packet_out, Xid, PktOut, {next_state, connected, State});
-				true ->
-					%% The output port is known, so add a new flow.
-					Match = flower_match:encode_ofp_matchflow([{nw_src_mask,32}, {nw_dst_mask,32}, tp_dst, tp_src, nw_proto, dl_type], Flow),
-					?DEBUG("Match: ~p~n", [Match]),
-					MatchBin = flower_packet:encode_msg(Match),
-					PktOut = flower_packet:encode_ofp_flow_mod(MatchBin, 0, add, 60, 0, 0, Msg#ofp_packet_in.buffer_id, 0, 1, Action),
-					?DEBUG("Send: ~p~n", [PktOut]),
-					send_pkt(flow_mod, Xid, PktOut, {next_state, connected, State})
-
-					%% if
-					%% 	%% If the switch didn't buffer the packet, we need to send a copy.
-					%% 	Msg#ofp_packet_in.buffer_id =:= 16#FFFFFFFF ->
-					%% 		PktOut = flower_packet:encode_ofp_packet_out(Msg#ofp_packet_in.buffer_id, Msg#ofp_packet_in.in_port, Action, Msg#ofp_packet_in.data),
-					%% 		io:format("Send: ~p~n", [PktOut]),
-					%% 		send_pkt(packet_out, Xid, PktOut, {next_state, connected, State});
-					%% 	true ->
-					%% 		ok
-					%% end,
-					%% ok
-			end;
-		_ ->
-			?DEBUG("no match: ~p~n", [Flow]),
-			{next_state, connected, State}
-	end;
+	flower_dispatcher:dispatch({packet, in}, self(), Xid, Msg),
+	{next_state, connected, State};
 
 connected({flow_removed, Xid, Msg}, State) ->
-	io:format("flow removed, ~w~n", [Xid]),
+	flower_dispatcher:dispatch({flow, removed}, self(), Xid, Msg),
+	{next_state, connected, State};
+
+connected({send, Type, Msg}, State) ->
+	send_request(Type, Msg, {next_state, connected, State});
+
+connected({send, Type, Xid, Msg}, State) ->
+	send_pkt(Type, Xid, Msg, {next_state, connected, State});
+
+connected(Msg, State) ->
+	io:format("unhandled message: ~w~n", [Msg]),
 	{next_state, connected, State}.
 	
-format_mac(<<A:8,B:8,C:8,D:8,E:8,F>>) ->
-	io_lib:format("~2.16.0B:~2.16.0B:~2.16.0B:~2.16.0B:~2.16.0B:~2.16.0B", [A,B,C,D,E,F]).
-
-format_ip(<<A:8,B:8,C:8,D:8>>) ->
-	io_lib:format("~B.~B.~B.~B", [A,B,C,D]).
-
-choose_destination(#flow{in_port = Port, dl_src = DlSrc, dl_dst = DlDst} = _Flow) ->
-	OutPort = case flower_mac_learning:eth_addr_is_reserved(DlSrc) of
-				  false -> learn_mac(DlSrc, 0, Port),
-						   find_out_port(DlDst, 0, Port);
-				  true -> none
-			  end,
-	io:format("Verdict: ~p~n", [OutPort]),
-	OutPort.
-
-learn_mac(DlSrc, VLan, Port) ->		 
-	R = case flower_mac_learning:may_learn(DlSrc, VLan) of
-			true -> flower_mac_learning:insert(DlSrc, VLan, Port);
-			false ->
-				not_learned
-		end,
-	if
-		R =:= new; R =:= updated ->
-            io:format("~p: learned that ~s is on port ~w~n", [self(), format_mac(DlSrc), Port]),
-			ok;
-		true ->
-			ok
-	end.
-
-find_out_port(DlDst, _VLan, Port) ->
-	OutPort = case flower_mac_learning:lookup(DlDst, 0) of
-				  none -> flood;
-				  {ok, OutPort1} -> 
-					  if
-						  %% Don't send a packet back out its input port.
-						  OutPort1 =:= Port -> none;
-						  true -> OutPort1
-					  end
-			  end,
-	OutPort.
-
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
@@ -307,7 +238,7 @@ handle_info({tcp, Socket, Data}, StateName, #state{socket = Socket} = State) ->
 	end,
 
 	%% push any other message into our MailBox....
-	lists:foldl(fun(Msg, _) -> gen_fsm:send_event(self(), {Msg#ovs_msg.type, Msg#ovs_msg.xid, Msg#ovs_msg.msg}) end, ok, Rest),
+	lists:foldl(fun(M, _) -> gen_fsm:send_event(self(), {M#ovs_msg.type, M#ovs_msg.xid, M#ovs_msg.msg}) end, ok, Rest),
 
 	Reply;
 
