@@ -211,7 +211,14 @@ ofp_flow_removed_reason(X) when is_integer(X) -> X;
 ofp_flow_removed_reason(idle_timeout) -> 0;
 ofp_flow_removed_reason(hard_timeout) -> 1;
 ofp_flow_removed_reason(delete)       -> 2.
-	
+
+ofp_port_reason(0) -> add;
+ofp_port_reason(1) -> delete;
+ofp_port_reason(2) -> modify;
+ofp_port_reason(X) when is_integer(X) -> X;
+ofp_port_reason(add)    -> 0;
+ofp_port_reason(delete) -> 1;
+ofp_port_reason(modify) -> 2.
 
 protocol(NwProto)
   when is_atom(NwProto) ->
@@ -255,6 +262,10 @@ decode_msg(flow_removed, <<Match:40/bytes, Cookie:64/integer, Priority:16/intege
 						   PacketCount:64/integer, ByteCount:64/integer>>) ->
 	#ofp_flow_removed{match = decode_ofp_match(Match), cookie = Cookie, priority = Priority, reason = ofp_flow_removed_reason(Reason),
 					  duration = {DurationSec, DurationNSec}, idle_timeout = IdleTimeout, packet_count = PacketCount, byte_count = ByteCount};
+
+decode_msg(port_status, <<Reason:8/integer, _Pad:7/bytes, PhyPort/binary>>) ->
+				  #ofp_port_status{reason = ofp_port_reason(Reason),
+								   port = decode_phy_port(PhyPort)};
 
 decode_msg(_, Msg) ->
 	Msg.
@@ -353,6 +364,8 @@ encode_phy_port(PortNo, HwAddr, Name, Config, State,Curr, Advertised, Supported,
 	Name0 = pad_to(16, Name),
 	<<PortNo0:16, HwAddr:6/bytes, Name0:16/bytes, Config:32, State:32, Curr:32, Advertised:32, Supported:32, Peer:32>>.
 
+encode_phy_port(Port) when is_binary(Port) ->
+	Port;
 encode_phy_port(#ofp_phy_port{port_no = PortNo,
 							  hw_addr = HwAddr,
 							  name = Name,
@@ -375,8 +388,14 @@ encode_phy_ports([], Acc) ->
 encode_phy_ports([Port|Rest], Acc) ->
 	encode_phy_ports(Rest, [encode_phy_port(Port)|Acc]).
 
-encode_phy_ports(Msg) ->
-	encode_phy_ports(Msg, []).
+encode_phy_ports(Ports) when is_binary(Ports) ->
+	Ports;
+encode_phy_ports(Ports) ->
+	encode_phy_ports(Ports, []).
+
+encode_ofp_port_status(Reason, Port) ->
+	Reason0 = ofp_port_reason(Reason),
+	<<Reason0:8, 0:56, Port/binary>>.
 
 -spec encode_ofp_switch_config(integer(), integer()) -> binary().
 encode_ofp_switch_config(Flags, MissSendLen) ->
@@ -511,6 +530,9 @@ encode_msg(#ofp_switch_features{datapath_id = DataPathId,
 
 encode_msg(#ofp_switch_config{flags = Flags, miss_send_len = MissSendLen}) ->
 	encode_ofp_switch_config(ofp_config_flags(Flags), MissSendLen);
+
+encode_msg(#ofp_port_status{reason = Reason, port = Port}) ->
+	encode_ofp_port_status(Reason, encode_phy_port(Port));
 
 encode_msg(#ofp_match{wildcards = Wildcards, in_port = InPort,
 					  dl_src = DlSrc, dl_dst = DlDst, dl_vlan = DlVlan, dl_vlan_pcp = DlVlanPcp, dl_type = DlType,

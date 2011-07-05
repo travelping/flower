@@ -138,3 +138,8 @@
 		  packet_count,
 		  byte_count
 }).
+
+-record(ofp_port_status, {
+		  reason,
+		  port
+}).

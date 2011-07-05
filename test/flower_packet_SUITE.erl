@@ -53,6 +53,21 @@ ofp_flow_removed() ->
 ofp_set_config() ->
 	<<1,9,0,12,0,0,0,6,0,0,0,128>>.
 
+ofp_port_status_cfg_down() ->
+	<<1,12,0,64,0,0,0,0,2,0,0,0,0,0,0,0,0,1,0,80,86,174,0,19,101,116,
+	  104,49,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1,0,0,2,160,0,0,2,
+	  175,0,0,2,175,0,0,0,0>>.
+
+ofp_port_status_lnk_down() ->
+	<<1,12,0,64,0,0,0,0,2,0,0,0,0,0,0,0,0,1,0,80,86,174,0,19,101,116,
+	  104,49,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,2,160,0,0,2,
+	  175,0,0,2,175,0,0,0,0>>.
+
+ofp_port_status_lnk_up() ->
+	<<1,12,0,64,0,0,0,0,2,0,0,0,0,0,0,0,0,1,0,80,86,174,0,19,101,116,
+	  104,49,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,160,0,0,2,
+	  175,0,0,2,175,0,0,0,0>>.
+
 %%--------------------------------------------------------------------
 %% @spec suite() -> Info
 %% Info = [tuple()]
@@ -109,7 +124,25 @@ test_flow_removed(_Config) ->
 	[#ovs_msg{msg = #ofp_flow_removed{}}|[#ovs_msg{msg = #ofp_flow_removed{}}]] = flower_packet:decode(Sw),
 	Sw = flower_packet:encode(flower_packet:decode(Sw)),
 	ok.
-	
+
+test_port_status_cfg_down(_Config) ->
+	Sw = ofp_port_status_cfg_down(),
+	[#ovs_msg{msg = #ofp_port_status{}}] = flower_packet:decode(Sw),
+	Sw = flower_packet:encode(flower_packet:decode(Sw)),
+	ok.
+
+test_port_status_lnk_down(_Config) ->
+	Sw = ofp_port_status_lnk_down(),
+	[#ovs_msg{msg = #ofp_port_status{}}] = flower_packet:decode(Sw),
+	Sw = flower_packet:encode(flower_packet:decode(Sw)),
+	ok.
+
+test_port_status_lnk_up(_Config) ->
+	Sw = ofp_port_status_lnk_up(),
+	[#ovs_msg{msg = #ofp_port_status{}}] = flower_packet:decode(Sw),
+	Sw = flower_packet:encode(flower_packet:decode(Sw)),
+	ok.
+
 test_set_config(_Config) ->
 	Sw = ofp_set_config(),
 	[#ovs_msg{msg = #ofp_switch_config{}}] = flower_packet:decode(Sw),
@@ -120,7 +153,9 @@ all() ->
 	[test_hello_request, test_echo_request, test_echo_reply,
 	 test_switch_features_request, test_switch_features_reply,
 	 test_set_config, test_flow_mod_add, test_flow_removed,
-	 test_packet_in, test_packet_out].
+	 test_packet_in, test_packet_out,
+	 test_port_status_cfg_down, test_port_status_lnk_down,
+	 test_port_status_lnk_up].
 
 init_per_suite(Config) ->
 	Config.
