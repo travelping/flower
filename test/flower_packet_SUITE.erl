@@ -120,7 +120,7 @@ all() ->
 	[test_hello_request, test_echo_request, test_echo_reply,
 	 test_switch_features_request, test_switch_features_reply,
 	 test_set_config, test_flow_mod_add, test_flow_removed,
-	 test_packet_in].
+	 test_packet_in, test_packet_out].
 
 init_per_suite(Config) ->
 	Config.
