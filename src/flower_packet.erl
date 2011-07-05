@@ -21,6 +21,7 @@
 		 encode_ofs_action_enqueue/2, encode_ofs_action_vendor/2,
 		 encode_ofp_match/13,
 		 encode_ofp_flow_mod/10,
+		 encode_ofp_flow_removed/8,
 		 encode_ofp_packet_out/4]).
 		 
 %% --------------------------------------------------------------------
@@ -253,8 +254,7 @@ decode_msg(flow_removed, <<Match:40/bytes, Cookie:64/integer, Priority:16/intege
 						   DurationSec:32/integer, DurationNSec:32/integer, IdleTimeout:16/integer, _Pad2:2/bytes,
 						   PacketCount:64/integer, ByteCount:64/integer>>) ->
 	#ofp_flow_removed{match = decode_ofp_match(Match), cookie = Cookie, priority = Priority, reason = ofp_flow_removed_reason(Reason),
-					  duration_sec = DurationSec, duration_nsec = DurationNSec, idle_timeout = IdleTimeout,
-					  packet_count = PacketCount, byte_count = ByteCount};
+					  duration = {DurationSec, DurationNSec}, idle_timeout = IdleTimeout, packet_count = PacketCount, byte_count = ByteCount};
 
 decode_msg(_, Msg) ->
 	Msg.
@@ -443,6 +443,14 @@ encode_ofp_flow_mod(Match, Cookie, Command, IdleTimeout, HardTimeout, Priority,
 	<<Match/binary, Cookie:64, Cmd:16, IdleTimeout:16, HardTimeout:16,
 	  Priority:16, BufferId:32, OutPort0:16, Flags:16, Actions/binary>>.
 
+-spec encode_ofp_flow_removed(binary(), integer(), integer(), integer()|atom(), tuple(integer(), integer()), integer(), integer(), integer()) -> binary().
+encode_ofp_flow_removed(Match, Cookie, Priority, Reason, {DurationSec, DurationNSec}, IdleTimeout, PacketCount, ByteCount) when is_atom(Reason) ->
+	Reason0 = ofp_flow_removed_reason(Reason),
+	encode_ofp_flow_removed(Match, Cookie, Priority, Reason0, {DurationSec, DurationNSec}, IdleTimeout, PacketCount, ByteCount);
+encode_ofp_flow_removed(Match, Cookie, Priority, Reason, {DurationSec, DurationNSec}, IdleTimeout, PacketCount, ByteCount) ->
+	<<Match/binary, Cookie:64, Priority:16, Reason:8, 0:8, DurationSec:32, DurationNSec:32, IdleTimeout:16, 0:16,
+	  PacketCount:64, ByteCount:64>>.
+
 -spec encode_ofp_packet_out(integer(), integer()|atom(), binary(), list(binary())|binary()) -> binary().
 encode_ofp_packet_out(BufferId, InPort, Actions, Data) when is_list(Actions) ->
 	encode_ofp_packet_out(BufferId, InPort, list_to_binary(Actions), Data);
@@ -519,6 +527,12 @@ encode_msg(#ofp_flow_mod{match = Match, cookie = Cookie, command = Command,
 	encode_ofp_flow_mod(encode_msg(Match), Cookie, ofp_flow_mod_command(Command), 
 						IdleTimeout, HardTimeout, Priority,	BufferId, OutPort,
 						enc_flags(ofp_flow_mod_flags(), Flags), encode_actions(Actions));
+
+encode_msg(#ofp_flow_removed{match = Match, cookie = Cookie, priority = Priority,
+							 reason = Reason, duration = Duration, idle_timeout = IdleTimeout,
+							 packet_count = PacketCount, byte_count = ByteCount}) ->
+	encode_ofp_flow_removed(encode_msg(Match), Cookie, Priority, Reason, Duration,
+							IdleTimeout, PacketCount, ByteCount);
 
 encode_msg(#ofp_packet_out{buffer_id = BufferId, in_port = InPort, actions = Actions, data = Data}) ->
 		   encode_ofp_packet_out(BufferId, InPort, encode_actions(Actions), Data);

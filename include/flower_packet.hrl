@@ -133,8 +133,7 @@
 		  cookie,
 		  priority,
 		  reason,
-		  duration_sec,
-		  duration_nsec,
+		  duration,
 		  idle_timeout,
 		  packet_count,
 		  byte_count
