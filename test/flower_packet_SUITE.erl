@@ -41,6 +41,15 @@ ofp_flow_mod_add() ->
 	  255,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,60,0,0,
 	  0,0,0,0,1,107,0,0,0,0,0,0,0,8,0,1,0,0>>.
 
+ofp_flow_removed() ->
+	<<1,11,0,88,0,0,0,0,0,48,0,15,255,254,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+	  0,0,8,0,0,1,0,0,10,48,0,1,10,48,0,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+	  0,0,0,0,0,61,7,8,137,128,0,60,0,0,0,0,0,0,0,0,0,3,0,0,0,0,0,0,1,
+	  38,1,11,0,88,0,0,0,0,0,48,0,15,255,254,0,0,0,0,0,0,0,0,0,0,0,0,
+	  0,0,0,0,8,0,0,17,0,0,10,48,0,3,10,48,127,255,2,119,2,119,0,0,0,
+	  0,0,0,0,0,0,0,0,0,0,0,0,60,21,71,99,64,0,60,0,0,0,0,0,0,0,0,0,2,
+	  0,0,0,0,0,0,1,196>>.
+
 ofp_set_config() ->
 	<<1,9,0,12,0,0,0,6,0,0,0,128>>.
 
@@ -54,50 +63,50 @@ suite() ->
 
 test_hello_request(_Config) ->
 	Sw = #ovs_msg{version = 1, type = hello, xid = 8, msg = <<>>},
-	Sw = flower_packet:decode(flower_packet:encode(Sw)),
+	[Sw] = flower_packet:decode(flower_packet:encode(Sw)),
 	ok.
 
 test_echo_request(_Config) ->
 	Sw = #ovs_msg{version = 1, type = echo_request, xid = 8, msg = <<>>},
-	Sw = flower_packet:decode(flower_packet:encode(Sw)),
+	[Sw] = flower_packet:decode(flower_packet:encode(Sw)),
 	ok.
 
 test_echo_reply(_Config) ->
 	Sw = #ovs_msg{version = 1, type = echo_reply, xid = 8, msg = <<>>},
-	Sw = flower_packet:decode(flower_packet:encode(Sw)),
+	[Sw] = flower_packet:decode(flower_packet:encode(Sw)),
 	ok.
 
 test_switch_features_request(_Config) ->
 	Sw = #ovs_msg{version = 1, type = features_request, xid = 2, msg = <<>>},
-	Sw = flower_packet:decode(flower_packet:encode(Sw)),
+	[Sw] = flower_packet:decode(flower_packet:encode(Sw)),
 	ok.
 
 test_switch_features_reply(_Config) ->
 	Sw = ofp_switch_features_reply(),
-	#ovs_msg{msg = #ofp_switch_features{}} = flower_packet:decode(Sw),
+	[#ovs_msg{msg = #ofp_switch_features{}}] = flower_packet:decode(Sw),
 	Sw = flower_packet:encode(flower_packet:decode(Sw)),
 	ok.
 
 test_packet_out(_Config) ->
 	Sw = ofp_packet_out(),
-	#ovs_msg{msg = #ofp_packet_out{}} = flower_packet:decode(Sw),
+	[#ovs_msg{msg = #ofp_packet_out{}}] = flower_packet:decode(Sw),
 	Sw = flower_packet:encode(flower_packet:decode(Sw)),
 	ok.
 
 test_packet_in(_Config) ->
 	Sw = ofp_packet_in(),
-	#ovs_msg{msg = #ofp_packet_in{}} = flower_packet:decode(Sw),
+	[#ovs_msg{msg = #ofp_packet_in{}}] = flower_packet:decode(Sw),
 	ok.
 	
 test_flow_mod_add(_Config) ->
 	Sw = ofp_flow_mod_add(),
-	#ovs_msg{msg = #ofp_flow_mod{}} = flower_packet:decode(Sw),
+	[#ovs_msg{msg = #ofp_flow_mod{}}] = flower_packet:decode(Sw),
 	Sw = flower_packet:encode(flower_packet:decode(Sw)),
 	ok.
 	
 test_set_config(_Config) ->
 	Sw = ofp_set_config(),
-	#ovs_msg{msg = #ofp_switch_config{}} = flower_packet:decode(Sw),
+	[#ovs_msg{msg = #ofp_switch_config{}}] = flower_packet:decode(Sw),
 	Sw = flower_packet:encode(flower_packet:decode(Sw)),
 	ok.
 

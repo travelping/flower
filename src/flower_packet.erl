@@ -65,7 +65,15 @@ encode(#ovs_msg{version = Version, type = Type, xid = Xid, msg = Msg}) ->
 	?DEBUG("~p ~p ~p ~p ~p~n", [Version, Mtype, Length, Xid, Msg]),
 	R = <<Version:8, Mtype:8, Length:16, Xid:32, Data/binary>>,
 	?DEBUG("Send: ~p~n", [R]),
-	R.
+	R;
+
+encode(Msg) when is_list(Msg) ->
+	encode(Msg, []).
+
+encode([], Acc) ->
+	list_to_binary(lists:reverse(Acc));
+encode([Msg|Rest], Acc) ->
+	encode(Rest, [encode(Msg)|Acc]).
 
 %%%===================================================================
 %%% constant, flags and enum translators
