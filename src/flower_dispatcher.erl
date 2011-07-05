@@ -45,8 +45,8 @@ terminate() ->
 	gen_server:call(?SERVER, terminate).
 
 dispatch(Event, Sw, Xid, Msg) ->
-	Handlers = ets:match(?SERVER, {Event, '$1'}),
-	lists:foreach(fun([Pid]) ->
+	Handlers = ets:lookup(?SERVER, Event),
+	lists:foreach(fun({_Ev, Pid}) ->
 						  gen_server:cast(Pid, {Event, Sw, Xid, Msg})
 				  end, Handlers).
 
