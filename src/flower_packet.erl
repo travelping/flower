@@ -19,6 +19,8 @@
 		 encode_ofs_action_dl_addr/2, encode_ofs_action_nw_addr/2,
 		 encode_ofs_action_nw_tos/1, encode_ofs_action_tp_addr/2,
 		 encode_ofs_action_enqueue/2, encode_ofs_action_vendor/2,
+		 encode_actions/1,
+		 encode_action/1,
 		 encode_ofp_match/13,
 		 encode_ofp_flow_mod/10,
 		 encode_ofp_flow_removed/8,
@@ -514,9 +516,12 @@ encode_actions([], Acc) ->
 	list_to_binary(lists:reverse(Acc));
 encode_actions([Head|Rest], Acc) ->
 	encode_actions(Rest, [encode_action(Head)|Acc]).
-encode_actions(List) ->
-	encode_actions(List, []).
 
+encode_actions(List) when is_list(List) ->
+	encode_actions(List, []);
+encode_actions(Action) when is_tuple(Action) ->
+	encode_action(Action).
+	
 encode_msg(#ofp_switch_features{datapath_id = DataPathId,
 								n_buffers = NBuffers,
 								n_tables = NTables,

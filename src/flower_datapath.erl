@@ -24,6 +24,7 @@
 -export([init/1, handle_event/3,
 		 handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
 -export([setup/2, open/2, connecting/2, connected/2]).
+-export([install_flow/10, send_packet/4, send_buffer/4, send_packet/5]).
 
 -define(SERVER, ?MODULE).
 
@@ -79,6 +80,80 @@ send(Sw, Type, Msg) ->
 send(Sw, Type, Xid, Msg) ->
 	gen_fsm:send_event(Sw, {send, Type, Xid, Msg}).
 
+%%--------------------------------------------------------------------
+%% @doc
+%% Send a Port_Stats_Request
+%% @end
+%%--------------------------------------------------------------------
+%%send_port_stats_request(Sw, Port) ->
+%%	send(Sw, Type, flower_packet:encode_ofp_stats_request()).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Add a flow entry to datapath
+%% @end
+%%--------------------------------------------------------------------
+install_flow(Sw, Match, Cookie, IdleTimeout, HardTimeout,
+			 Actions, BufferId, Priority, InPort, Packet) ->
+	MatchBin = flower_packet:encode_msg(Match),
+	ActionsBin = flower_packet:encode_actions(Actions),
+	PktOut = flower_packet:encode_ofp_flow_mod(MatchBin, Cookie, add, IdleTimeout, HardTimeout, Priority, BufferId, none, 1, ActionsBin),
+
+	send(Sw, flow_mod, PktOut),
+	if
+		BufferId == 16#FFFFFFFF,
+		Packet /= none ->
+			case lists:keyfind(ofp_action_output, 1, Actions) of
+				#ofp_action_output{} = Action ->
+					send_packet(Sw, Packet, Action, InPort);
+				_ ->
+					{error, not_implemented}
+			end;
+		true ->
+			ok
+	end,
+	flower_dispatcher:dispatch({flow, mod}, Sw, Match),
+	ok.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% sends an openflow packet to a datapath
+%% @end
+%%--------------------------------------------------------------------
+send_packet(Sw, Packet, Actions, InPort) ->
+	ActionsBin = flower_packet:encode_actions(Actions),
+	PktOut = flower_packet:encode_ofp_packet_out(16#FFFFFFFF, InPort, ActionsBin, Packet),
+	send(Sw, packet_out, PktOut).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Tells a datapath to send out a buffer
+%% @end
+%%--------------------------------------------------------------------
+send_buffer(Sw, BufferId, Actions, InPort) ->
+	ActionsBin = flower_packet:encode_actions(Actions),
+	PktOut = flower_packet:encode_ofp_packet_out(BufferId, InPort, ActionsBin, <<>>),
+	send(Sw, packet_out, PktOut).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Sends an openflow packet to a datapath.
+%%
+%% This function is a convenient wrapper for send_packet and 
+%% send_buffer for situations where it is unknown in advance
+%% whether the packet to be sent is buffered. If
+%% 'buffer_id' is -1, it sends 'packet'; otherwise, it sends the
+%% buffer represented by 'buffer_id'.
+%% @end
+%%--------------------------------------------------------------------
+send_packet(Sw, BufferId, Packet, Actions, InPort) ->
+	if
+		BufferId == 16#FFFFFFFF ->
+			send_packet(Sw, Packet, Actions, InPort);
+		true ->
+			send_buffer(Sw, BufferId, Actions, InPort)
+	end.
+
 %%%===================================================================
 %%% gen_fsm callbacks
 %%%===================================================================
@@ -127,7 +202,7 @@ open({hello, _Xid, _Msg}, State) ->
 
 connecting({features_reply, Xid, Msg}, State) ->
 	?DEBUG("got features_reply in connected"),
-	flower_dispatcher:dispatch({datapath, join}, self(), Xid, Msg),
+	flower_dispatcher:dispatch({datapath, join}, self(), Msg),
 	{next_state, connected, State#state{features = Msg}};
 
 connecting({echo_request, Xid, _Msg}, State) ->
@@ -141,11 +216,19 @@ connected({echo_request, Xid, _Msg}, State) ->
 	send_pkt(echo_reply, Xid, <<>>, {next_state, connected, State});
 
 connected({packet_in, Xid, Msg}, State) ->
-	flower_dispatcher:dispatch({packet, in}, self(), Xid, Msg),
+	flower_dispatcher:dispatch({packet, in}, self(), Msg),
 	{next_state, connected, State};
 
 connected({flow_removed, Xid, Msg}, State) ->
-	flower_dispatcher:dispatch({flow, removed}, self(), Xid, Msg),
+	flower_dispatcher:dispatch({flow, removed}, self(), Msg),
+	{next_state, connected, State};
+
+connected({port_status, Xid, Msg}, State) ->
+	flower_dispatcher:dispatch({port, status}, self(), Msg),
+	{next_state, connected, State};
+
+connected({stats_reply, Xid, Msg}, State) ->
+	flower_dispatcher:dispatch({port, stats}, self(), Msg),
 	{next_state, connected, State};
 
 connected({send, Type, Msg}, State) ->
@@ -269,7 +352,7 @@ terminate(_Reason, StateName, State) ->
 	?DEBUG("terminate"),
 	case StateName of
 		connected ->
-			flower_dispatcher:dispatch({datapath, leave}, self(), 0, undefined);
+			flower_dispatcher:dispatch({datapath, leave}, self(), undefined);
 		_ ->
 			ok
 	end,
@@ -305,7 +388,6 @@ send_hello(State) ->
 		{error, Reason} ->
 			{error, Reason, NewState}
 	end.
-
 
 send_request(Type, Msg, NextStateInfo) ->
 	State = element(3, NextStateInfo),

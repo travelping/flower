@@ -89,47 +89,32 @@ handle_call(_Request, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({{packet, in}, Sw, Xid, Msg}, State) ->
+handle_cast({{packet, in}, Sw, Msg}, State) ->
 	case Flow = (catch flower_flow:flow_extract(0, Msg#ofp_packet_in.in_port, Msg#ofp_packet_in.data)) of
 		#flow{tun_id = TunId, nw_src = NwSrc, nw_dst = NwDst, in_port = InPort, vlan_tci = VlanTci,
 			  dl_type = DlType, tp_src = TpSrc, tp_dst = TpDst, dl_src = DlSrc, dl_dst = DlDst,
 			  nw_proto = NwProto, nw_tos = NwTos, arp_sha = ArpSha, arp_tha = ArpTha} ->
 			%% choose destination...
 			Port = choose_destination(Flow),
-			Action = case Port of
-						 none -> <<>>;
+			Actions = case Port of
+						 none -> [];
 %%						 X when is_integer(X) ->
-%%							 flower_packet:encode_ofs_action_enqueue(X, 0);
+%%							 [#ofp_action_enqueue{port = X, queue_id = 0}];
 						 X ->
-							 flower_packet:encode_ofs_action_output(X, 0)
+							 [#ofp_action_output{port = X, max_len = 0}]
 					 end,
 			
 			if
 				Port =:= flood ->
 					%% We don't know that MAC, or we don't set up flows.  Send along the
 					%% packet without setting up a flow.
-					PktOut = flower_packet:encode_ofp_packet_out(Msg#ofp_packet_in.buffer_id, Msg#ofp_packet_in.in_port, Action, Msg#ofp_packet_in.data),
-					?DEBUG("Send: ~p~n", [PktOut]),
-					send(Sw, packet_out, PktOut);
+					flower_datapath:send_packet(Sw, Msg#ofp_packet_in.buffer_id, Msg#ofp_packet_in.data, Actions, Msg#ofp_packet_in.in_port);
 				true ->
 					%% The output port is known, so add a new flow.
 					Match = flower_match:encode_ofp_matchflow([{nw_src_mask,32}, {nw_dst_mask,32}, tp_dst, tp_src, nw_proto, dl_type], Flow),
 					?DEBUG("Match: ~p~n", [Match]),
-					MatchBin = flower_packet:encode_msg(Match),
-					PktOut = flower_packet:encode_ofp_flow_mod(MatchBin, 0, add, 60, 0, 0, Msg#ofp_packet_in.buffer_id, 0, 1, Action),
-					?DEBUG("Send: ~p~n", [PktOut]),
-					send(Sw, flow_mod, PktOut)
 
-					%% if
-					%% 	%% If the switch didn't buffer the packet, we need to send a copy.
-					%% 	Msg#ofp_packet_in.buffer_id =:= 16#FFFFFFFF ->
-					%% 		PktOut = flower_packet:encode_ofp_packet_out(Msg#ofp_packet_in.buffer_id, Msg#ofp_packet_in.in_port, Action, Msg#ofp_packet_in.data),
-					%% 		io:format("Send: ~p~n", [PktOut]),
-					%% 		send_pkt(packet_out, Xid, PktOut, {next_state, connected, State});
-					%% 	true ->
-					%% 		ok
-					%% end,
-					%% ok
+					flower_datapath:install_flow(Sw, Match, 0, 60, 0, Actions, Msg#ofp_packet_in.buffer_id, 0, Msg#ofp_packet_in.in_port, Msg#ofp_packet_in.data)
 			end;
 		_ ->
 			?DEBUG("no match: ~p~n", [Flow])
@@ -221,6 +206,3 @@ find_out_port(DlDst, _VLan, Port) ->
 					  end
 			  end,
 	OutPort.
-
-send(Sw, Type, Msg) ->
-	flower_datapath:send(Sw, Type, Msg).

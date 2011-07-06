@@ -12,7 +12,7 @@
 
 %% API
 -export([start_link/0]).
--export([delete/1, join/1, leave/1, terminate/0, dispatch/4]).
+-export([delete/1, join/1, leave/1, terminate/0, dispatch/3]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -44,10 +44,10 @@ leave(Event) ->
 terminate() ->
 	gen_server:call(?SERVER, terminate).
 
-dispatch(Event, Sw, Xid, Msg) ->
+dispatch(Event, Sw, Msg) ->
 	Handlers = ets:lookup(?SERVER, Event),
 	lists:foreach(fun({_Ev, Pid}) ->
-						  gen_server:cast(Pid, {Event, Sw, Xid, Msg})
+						  gen_server:cast(Pid, {Event, Sw, Msg})
 				  end, Handlers).
 
 %%%===================================================================
