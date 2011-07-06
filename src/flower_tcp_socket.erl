@@ -34,9 +34,9 @@ init([]) ->
     {ok, {?TCP_PORT, ?TCP_OPTS}, nil}.
 
 handle_accept(Sock, State) ->
-	case flower_connection:start_connection() of
+	case flower_datapath:start_connection() of
 		{ok, Pid} ->
-			flower_connection:accept(Pid, Sock);
+			flower_datapath:accept(Pid, Sock);
 		_ ->
 			error_logger:error_report([{event, accept_failed}]),
 			gen_tcp:close(Sock)

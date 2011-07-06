@@ -6,7 +6,7 @@
 %%% @end
 %%% Created : 28 Jun 2011 by Andreas Schultz <aschultz@tpip.net>
 %%%-------------------------------------------------------------------
--module(flower_connection).
+-module(flower_datapath).
 
 -behaviour(gen_fsm).
 
@@ -23,7 +23,7 @@
 %% gen_fsm callbacks
 -export([init/1, handle_event/3,
 		 handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
--export([setup/2, open/2, connected/2]).
+-export([setup/2, open/2, connecting/2, connected/2]).
 
 -define(SERVER, ?MODULE).
 
@@ -67,7 +67,7 @@ start_link() ->
 	gen_fsm:start_link(?MODULE, [], [?FSM_OPTS]).
 
 start_connection() ->
-	flower_connection_sup:start_connection(?MODULE).
+	flower_datapath_sup:start_connection(?MODULE).
 
 accept(Server, Socket) ->
     gen_tcp:controlling_process(Socket, Server),
@@ -123,7 +123,15 @@ setup({accept, Socket}, State) ->
 
 open({hello, _Xid, _Msg}, State) ->
 	?DEBUG("got hello in open"),
-	send_request(features_request, <<>>, {next_state, connected, State, ?REQUEST_TIMEOUT}).
+	send_request(features_request, <<>>, {next_state, connecting, State, ?REQUEST_TIMEOUT}).
+
+connecting({features_reply, Xid, Msg}, State) ->
+	?DEBUG("got features_reply in connected"),
+	flower_dispatcher:dispatch({datapath, join}, self(), Xid, Msg),
+	{next_state, connected, State#state{features = Msg}};
+
+connecting({echo_request, Xid, _Msg}, State) ->
+	send_pkt(echo_reply, Xid, <<>>, {next_state, connected, State}).
 
 connected({features_reply, _Xid, Msg}, State) ->
 	?DEBUG("got features_reply in connected"),
@@ -257,8 +265,14 @@ handle_info({tcp_closed, Socket}, _StateName, #state{socket = Socket} = State) -
 %% @spec terminate(Reason, StateName, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(_Reason, _StateName, State) ->
+terminate(_Reason, StateName, State) ->
 	?DEBUG("terminate"),
+	case StateName of
+		connected ->
+			flower_dispatcher:dispatch({datapath, leave}, self(), 0, undefined);
+		_ ->
+			ok
+	end,
 	gen_tcp:close(State#state.socket),
 	ok.
 

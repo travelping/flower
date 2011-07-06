@@ -1,4 +1,4 @@
--module(flower_connection_sup).
+-module(flower_datapath_sup).
 
 -behaviour(supervisor).
 

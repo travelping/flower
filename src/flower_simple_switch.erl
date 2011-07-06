@@ -223,4 +223,4 @@ find_out_port(DlDst, _VLan, Port) ->
 	OutPort.
 
 send(Sw, Type, Msg) ->
-	flower_connection:send(Sw, Type, Msg).
+	flower_datapath:send(Sw, Type, Msg).
