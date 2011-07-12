@@ -7,6 +7,13 @@
 %%% Created : 28 Jun 2011 by Andreas Schultz <aschultz@tpip.net>
 %%%-------------------------------------------------------------------
 
+-define(ETH_TYPE_MIN,   16#600).
+-define(ETH_TYPE_IP,   16#0800).
+-define(ETH_TYPE_ARP,  16#0806).
+-define(ETH_TYPE_VLAN, 16#8100).
+-define(ETH_TYPE_IPV6, 16#86dd).
+-define(ETH_TYPE_LACP, 16#8809).
+
 -record(ovs_msg, {
 		  version = 1        :: integer(),
 		  type               :: atom(),

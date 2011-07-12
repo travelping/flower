@@ -12,7 +12,7 @@
 -export([encode/1, encode_msg/1, decode/1]).
 %% constant mappers
 -export([ofpt/1, ofp_packet_in_reason/1, ofp_config_flags/1,
-		 ofp_flow_mod_command/1, ofp_port/1]).
+		 ofp_flow_mod_command/1, ofp_port/1, eth_type/1]).
 %% part encoders
 -export([encode_ofs_action_output/2, encode_ofs_action_vlan_vid/1,
 		 encode_ofs_action_vlan_pcp/1, encode_ofs_action_strip_vlan/0,
@@ -82,6 +82,19 @@ encode([Msg|Rest], Acc) ->
 %%% constant, flags and enum translators
 %%%===================================================================
 
+eth_type(?ETH_TYPE_IP) -> ip;
+eth_type(?ETH_TYPE_ARP) -> arp;
+eth_type(?ETH_TYPE_VLAN) -> vlan;
+eth_type(?ETH_TYPE_IPV6) -> ipv6;
+eth_type(?ETH_TYPE_LACP) -> lacp;
+eth_type(X) when is_integer(X) -> X;
+													   
+eth_type(ip) ->   ?ETH_TYPE_IP;
+eth_type(arp) ->  ?ETH_TYPE_ARP;
+eth_type(vlan) -> ?ETH_TYPE_VLAN;
+eth_type(ipv6) -> ?ETH_TYPE_IPV6;
+eth_type(lacp) -> ?ETH_TYPE_LACP;
+eth_type(undefined) -> 0.
 
 ofpt(0)		-> hello;
 ofpt(1)		-> error;
@@ -278,7 +291,7 @@ decode_ofp_match(<<Wildcards:32/integer, InPort:16/integer,
 				   DlType:16/integer, NwTos:8/integer, NwProto:8/integer, _Pad2:2/bytes,
 				   NwSrc:4/bytes, NwDst:4/bytes, TpSrc:16/integer, TpDst:16/integer>>) ->
 	#ofp_match{wildcards = Wildcards, in_port = ofp_port(InPort),
-			   dl_src = DlSrc, dl_dst = DlDst, dl_vlan = DlVlan, dl_vlan_pcp = DlVlanPcp, dl_type = DlType,
+			   dl_src = DlSrc, dl_dst = DlDst, dl_vlan = DlVlan, dl_vlan_pcp = DlVlanPcp, dl_type = eth_type(DlType),
 			   nw_tos = NwTos, nw_proto = protocol(NwProto), nw_src = NwSrc, nw_dst = NwDst,
 			   tp_src = TpSrc, tp_dst = TpDst}.
 
@@ -403,15 +416,26 @@ encode_ofp_port_status(Reason, Port) ->
 encode_ofp_switch_config(Flags, MissSendLen) ->
 	<<Flags:16, MissSendLen:16>>.
 
+int_maybe_undefined(X) when is_integer(X) -> X;
+int_maybe_undefined(undefined) -> 0.
+
+bin_maybe_undefined(X, Len) when is_binary(X) -> pad_to(Len, X);
+bin_maybe_undefined(undefined, Len) -> pad_to(Len, <<0>>).
+	
 -spec encode_ofp_match(integer(), integer()|atom(), binary(), binary(), integer(),
-					   integer(), integer(), integer(), integer()|atom(),
+					   integer(), integer()|atom(), integer(), integer()|atom(),
 					   binary(), binary(), integer(), integer()) -> binary().
 encode_ofp_match(Wildcards, InPort, DlSrc, DlDst, DlVlan, DlVlanPcp, DlType,
 				 NwTos, NwProto, NwSrc, NwDst, TpSrc, TpDst) ->
 	InPort0 = ofp_port(InPort),
-	NwProto0 = protocol(NwProto),
+	DlType0 = eth_type(DlType),
+	NwProto0 = int_maybe_undefined(protocol(NwProto)),
+	NwSrc0 = bin_maybe_undefined(NwSrc, 4),
+	NwDst0 = bin_maybe_undefined(NwDst, 4),
+	TpSrc0 = int_maybe_undefined(TpSrc),
+	TpDst0 = int_maybe_undefined(TpDst),
 	<<Wildcards:32, InPort0:16, DlSrc:6/binary, DlDst:6/binary, DlVlan:16, DlVlanPcp:8,
-	  0:8, DlType:16, NwTos:8, NwProto0:8, 0:16, NwSrc:4/binary, NwDst:4/binary, TpSrc:16, TpDst:16>>.
+	  0:8, DlType0:16, NwTos:8, NwProto0:8, 0:16, NwSrc0:4/binary, NwDst0:4/binary, TpSrc0:16, TpDst0:16>>.
 
 encode_ofs_action_output(Port, MaxLen) ->
 	Port0 = ofp_port(Port),

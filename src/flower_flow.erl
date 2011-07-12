@@ -6,6 +6,7 @@
 %% --------------------------------------------------------------------
 %% Include files
 %% --------------------------------------------------------------------
+-include("flower_packet.hrl").
 -include("flower_flow.hrl").
 
 %%%===================================================================
@@ -18,12 +19,6 @@
 -define(ARP_OP_REPLY, 2).
 
 -define(FLOW_DL_TYPE_NONE, 16#5ff).
--define(ETH_TYPE_MIN,   16#600).
--define(ETH_TYPE_IP,   16#0800).
--define(ETH_TYPE_ARP,  16#0806).
--define(ETH_TYPE_VLAN, 16#8100).
--define(ETH_TYPE_IPV6, 16#86dd).
--define(ETH_TYPE_LACP, 16#8809).
 
 -define(IP_DSCP_MASK, 16#fc).
 
@@ -49,10 +44,9 @@ decode_packet(<<DlSrc:?ETH_ADDR_LEN/bytes, DlDst:?ETH_ADDR_LEN/bytes, 16#8100:16
 			  Flow) ->
 	decode_ethertype(EtherType, PayLoad, Flow#flow{vlan_tci = {PCP, VID}, dl_src = DlSrc, dl_dst = DlDst});
 
-decode_packet(<<DlSrc:?ETH_ADDR_LEN/bytes, DlDst:?ETH_ADDR_LEN/bytes, EtherType:16/integer, PayLoad/binary>>,
+decode_packet(<<DlSrc:?ETH_ADDR_LEN/bytes, DlDst:?ETH_ADDR_LEN/bytes, EtherType:16/integer, PayLoad/binary>> = Pkt,
 			  Flow) ->
-	io:format("Ethertype: ~p~n", [EtherType]),
-	decode_ethertype(EtherType, PayLoad, Flow#flow{dl_src = DlSrc, dl_dst = DlDst}).
+	decode_ethertype(flower_packet:eth_type(EtherType), PayLoad, Flow#flow{dl_src = DlSrc, dl_dst = DlDst}).
 
 decode_ethertype(EtherType, PayLoad, Flow) when EtherType >= ?ETH_TYPE_MIN ->
 	decode_payload(EtherType, PayLoad, Flow#flow{dl_type = EtherType, l3 = PayLoad});
@@ -62,13 +56,13 @@ decode_ethertype(EtherType, PayLoad, Flow) when EtherType >= ?ETH_TYPE_MIN ->
 %% llc.llc_cntl == LLC_CNTL_SNAP
 %% snap.snap_org ==  SNAP_ORG_ETHERNET,
 decode_ethertype(_EtherType, <<?LLC_DSAP_SNAP:8/integer, ?LLC_SSAP_SNAP:8/integer, ?LLC_CNTL_SNAP:8/integer, ?SNAP_ORG_ETHERNET, SnapType:16/integer, PayLoad/binary>>, Flow) ->
-	decode_payload(SnapType, PayLoad, Flow#flow{dl_type = SnapType, l3 = PayLoad});
+	decode_payload(flower_packet:eth_type(SnapType), PayLoad, Flow#flow{dl_type = flower_packet:eth_type(SnapType), l3 = PayLoad});
 
 decode_ethertype(_EtherType, PayLoad, Flow) ->
-	decode_payload(?FLOW_DL_TYPE_NONE, PayLoad, Flow#flow{dl_type = ?FLOW_DL_TYPE_NONE, l3 = PayLoad}).
+	decode_payload(none, PayLoad, Flow#flow{dl_type = ?FLOW_DL_TYPE_NONE, l3 = PayLoad}).
 
-decode_payload(?ETH_TYPE_IP, <<_IhlVer:8/integer, Tos:8/integer, _TotLen:16/integer,
-							  _Id:16/integer, FragOff:16/integer, _Ttl:8/integer, Proto:8/integer,
+decode_payload(ip, <<_IhlVer:8/integer, Tos:8/integer, _TotLen:16/integer,
+					 _Id:16/integer, FragOff:16/integer, _Ttl:8/integer, Proto:8/integer,
 							  _Csum:16/integer, Src:4/bytes, Dst:4/bytes, PayLoad/binary>>, Flow0) ->
 
 	NwProto = gen_socket:protocol(Proto),
@@ -87,8 +81,8 @@ decode_payload(?ETH_TYPE_IP, <<_IhlVer:8/integer, Tos:8/integer, _TotLen:16/inte
 %% ar_pro == htons(ETH_TYPE_IP)
 %% ar_hln == ETH_ADDR_LEN
 %% ar_pln == 4
-decode_payload(?ETH_TYPE_ARP, <<1:16/integer, ?ETH_TYPE_IP:16/integer, ?ETH_ADDR_LEN:8/integer, 4:8/integer,
-								Op:16/integer, Sha:?ETH_ADDR_LEN/bytes, Spa:32/integer, Tha:?ETH_ADDR_LEN/bytes, Tpa:32/integer>>, Flow) ->
+decode_payload(arp, <<1:16/integer, ?ETH_TYPE_IP:16/integer, ?ETH_ADDR_LEN:8/integer, 4:8/integer,
+					  Op:16/integer, Sha:?ETH_ADDR_LEN/bytes, Spa:4/bytes, Tha:?ETH_ADDR_LEN/bytes, Tpa:4/bytes>>, Flow) ->
 	Flow1 = if
 				Op =< 16#FF -> Flow#flow{nw_proto = Op};
 				true -> Flow
@@ -100,7 +94,7 @@ decode_payload(?ETH_TYPE_ARP, <<1:16/integer, ?ETH_TYPE_IP:16/integer, ?ETH_ADDR
 		true -> Flow1
 	end;
 
-decode_payload(_, _, Flow) ->
+decode_payload(Type, Pkt, Flow) ->
 	Flow.
 
 decode_ip(tcp, <<Src:16/integer, Dst:16/integer, _Seq:32/integer, _Ack:32/integer,
