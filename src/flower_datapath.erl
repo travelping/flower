@@ -23,8 +23,8 @@
 %% gen_fsm callbacks
 -export([init/1, handle_event/3,
 		 handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
--export([setup/2, open/2, connecting/2, connected/2]).
--export([install_flow/10, send_packet/4, send_buffer/4, send_packet/5]).
+-export([setup/2, open/2, connecting/2, connected/2, connected/3]).
+-export([install_flow/10, send_packet/4, send_buffer/4, send_packet/5, portinfo/2]).
 
 -define(SERVER, ?MODULE).
 
@@ -148,11 +148,15 @@ send_buffer(Sw, BufferId, Actions, InPort) ->
 %%--------------------------------------------------------------------
 send_packet(Sw, BufferId, Packet, Actions, InPort) ->
 	if
-		BufferId == 16#FFFFFFFF ->
+		BufferId == 16#FFFFFFFF;
+		BufferId == none ->
 			send_packet(Sw, Packet, Actions, InPort);
 		true ->
 			send_buffer(Sw, BufferId, Actions, InPort)
 	end.
+
+portinfo(Sw, Port) ->
+	gen_fsm:sync_send_event(Sw, {portinfo, Port}, 1000).
 
 %%%===================================================================
 %%% gen_fsm callbacks
@@ -259,6 +263,10 @@ connected(Msg, State) ->
 %%                   {stop, Reason, Reply, NewState}
 %% @end
 %%--------------------------------------------------------------------
+
+connected({portinfo, Port}, _From, #state{features = Features} = State) ->
+	Reply = lists:keyfind(Port, #ofp_phy_port.port_no, Features#ofp_switch_features.ports),
+	{reply, Reply, connected, State}.
 
 %% state_name(_Event, _From, State) ->
 %% 	Reply = ok,
