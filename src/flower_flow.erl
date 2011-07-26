@@ -13,38 +13,15 @@
 %%% API
 %%%===================================================================
 
--define(ETH_ADDR_LEN, 6).
-
--define(ARP_OP_REQUEST, 1).
--define(ARP_OP_REPLY, 2).
-
--define(FLOW_DL_TYPE_NONE, 16#5ff).
-
--define(IP_DSCP_MASK, 16#fc).
-
--define(IP_DONT_FRAGMENT,  16#4000).
--define(IP_MORE_FRAGMENTS, 16#2000).
--define(IP_FRAG_OFF_MASK,  16#1fff).
-
--define(LLC_DSAP_SNAP, 16#aa).
--define(LLC_SSAP_SNAP, 16#aa).
--define(LLC_CNTL_SNAP, 3).
--define(SNAP_ORG_ETHERNET, 0,0,0).
-
-%% The match fields for ICMP type and code use the transport source and
-%% destination port fields, respectively. */
--define(ICMP_TYPE, tp_src).
--define(ICMP_CODE, tp_dst).
-
 flow_extract(TunId, InPort, Packet) ->
 	Flow = #flow{tun_id = TunId, in_port = InPort, l2 = Packet},
 	decode_packet(Packet, Flow).
 
-decode_packet(<<DlSrc:?ETH_ADDR_LEN/bytes, DlDst:?ETH_ADDR_LEN/bytes, 16#8100:16/integer, PCP:3/integer, _CFI:1/integer, VID:12/integer, EtherType:16/integer, PayLoad/binary>>,
+decode_packet(<<DlDst:?ETH_ADDR_LEN/bytes, DlSrc:?ETH_ADDR_LEN/bytes, 16#8100:16/integer, PCP:3/integer, _CFI:1/integer, VID:12/integer, EtherType:16/integer, PayLoad/binary>>,
 			  Flow) ->
 	decode_ethertype(EtherType, PayLoad, Flow#flow{vlan_tci = {PCP, VID}, dl_src = DlSrc, dl_dst = DlDst});
 
-decode_packet(<<DlSrc:?ETH_ADDR_LEN/bytes, DlDst:?ETH_ADDR_LEN/bytes, EtherType:16/integer, PayLoad/binary>> = Pkt,
+decode_packet(<<DlDst:?ETH_ADDR_LEN/bytes, DlSrc:?ETH_ADDR_LEN/bytes, EtherType:16/integer, PayLoad/binary>> = Pkt,
 			  Flow) ->
 	decode_ethertype(flower_packet:eth_type(EtherType), PayLoad, Flow#flow{dl_src = DlSrc, dl_dst = DlDst}).
 
@@ -82,10 +59,10 @@ decode_payload(ip, <<_IhlVer:8/integer, Tos:8/integer, _TotLen:16/integer,
 %% ar_hln == ETH_ADDR_LEN
 %% ar_pln == 4
 decode_payload(arp, <<1:16/integer, ?ETH_TYPE_IP:16/integer, ?ETH_ADDR_LEN:8/integer, 4:8/integer,
-					  Op:16/integer, Sha:?ETH_ADDR_LEN/bytes, Spa:4/bytes, Tha:?ETH_ADDR_LEN/bytes, Tpa:4/bytes>>, Flow) ->
+					  Op:16/integer, Sha:?ETH_ADDR_LEN/bytes, Spa:4/bytes, Tha:?ETH_ADDR_LEN/bytes, Tpa:4/bytes, _Pad/binary>> = PayLoad, Flow) ->
 	Flow1 = if
-				Op =< 16#FF -> Flow#flow{nw_proto = Op};
-				true -> Flow
+				Op =< 16#FF -> Flow#flow{nw_proto = flower_arp:op(Op), l4 = PayLoad};
+				true -> Flow#flow{l4 = PayLoad}
 			end,
 	if
 		Op =:= ?ARP_OP_REQUEST;
@@ -95,6 +72,7 @@ decode_payload(arp, <<1:16/integer, ?ETH_TYPE_IP:16/integer, ?ETH_ADDR_LEN:8/int
 	end;
 
 decode_payload(Type, Pkt, Flow) ->
+	io:format("decode_payload: ~p, ~p, ~p~n",[Type, Pkt, Flow]),
 	Flow.
 
 decode_ip(tcp, <<Src:16/integer, Dst:16/integer, _Seq:32/integer, _Ack:32/integer,
