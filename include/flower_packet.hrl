@@ -14,6 +14,8 @@
 -define(ETH_TYPE_IPV6, 16#86dd).
 -define(ETH_TYPE_LACP, 16#8809).
 
+-define(ETH_BROADCAST, <<255,255,255,255,255,255>>).
+
 -record(ovs_msg, {
 		  version = 1        :: integer(),
 		  type               :: atom(),
@@ -149,4 +151,85 @@
 -record(ofp_port_status, {
 		  reason,
 		  port
+}).
+
+
+%% Nicira extensions
+
+-record(nxt_flow_mod_table_id, {
+		  set
+}).
+
+-record(nxt_role_request, {
+		  role
+}).
+
+
+-record(nx_flow_mod, {
+		  cookie,
+		  command,
+		  idle_timeout,
+		  hard_timeout,
+		  priority,
+		  buffer_id,
+		  out_port,
+		  flags,
+		  nx_match,
+		  actions
+}).
+
+-record(nx_action_resubmit, {
+		  in_port
+}).
+
+-record(nx_action_set_tunnel, {
+		  tun_id
+}).
+
+-record(nx_action_set_tunnel64, {
+		  tun_id
+}).
+
+-record(nx_action_set_queue, {
+		  queue_id
+}).
+
+-record(nx_action_pop_queue, {
+}).
+
+-record(nx_action_reg_move, {
+		  n_bits,
+		  src_ofs,
+		  dst_ofs,
+		  src,
+		  dst
+}).
+
+-record(nx_action_reg_load, {
+		  value,
+		  nbits,
+		  dst,
+		  ofs
+}).
+
+-record(nx_action_note, {
+		  note
+}).
+
+-record(nx_action_multipath, {
+		  fields,
+		  basis,
+		  algorithm,
+		  max_link,
+		  arg,
+		  ofs,
+		  nbits,
+		  dst
+}).
+
+-record(nx_action_autopath, {
+		  ofs,
+		  nbits,
+		  dst,
+		  id
 }).

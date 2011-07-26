@@ -19,6 +19,12 @@
 		 encode_ofs_action_dl_addr/2, encode_ofs_action_nw_addr/2,
 		 encode_ofs_action_nw_tos/1, encode_ofs_action_tp_addr/2,
 		 encode_ofs_action_enqueue/2, encode_ofs_action_vendor/2,
+		 encode_nx_action_resubmit/1, encode_nx_action_set_tunnel/1,
+		 encode_nx_action_set_tunnel64/1, encode_nx_action_set_queue/1,
+		 encode_nx_action_pop_queue/0, encode_nx_action_reg_move/5,
+		 encode_nx_action_reg_load/4, encode_nx_action_note/1,
+		 encode_nx_action_multipath/8, encode_nx_action_autopath/4,
+		 nxm_header/1, encode_nx_action/2,
 		 encode_actions/1,
 		 encode_action/1,
 		 encode_ofp_match/13,
@@ -82,6 +88,11 @@ encode([Msg|Rest], Acc) ->
 %%% constant, flags and enum translators
 %%%===================================================================
 
+-define(VENDOR_NICIRA, 16#2320).
+vendor(?VENDOR_NICIRA) -> nicira;
+vendor(X) when is_integer(X) -> X;
+vendor(nicira) -> ?VENDOR_NICIRA.
+	 
 eth_type(?ETH_TYPE_IP) -> ip;
 eth_type(?ETH_TYPE_ARP) -> arp;
 eth_type(?ETH_TYPE_VLAN) -> vlan;
@@ -235,11 +246,65 @@ ofp_port_reason(add)    -> 0;
 ofp_port_reason(delete) -> 1;
 ofp_port_reason(modify) -> 2.
 
+of_vendor_ext({nicira, 10}) ->	nxt_role_request;
+of_vendor_ext({nicira, 11}) ->	nxt_role_reply;
+of_vendor_ext({nicira, 12}) ->	nxt_set_flow_format;
+of_vendor_ext({nicira, 13}) ->	nxt_flow_mod;
+of_vendor_ext({nicira, 14}) ->	nxt_flow_removed;
+of_vendor_ext({nicira, 15}) ->	nxt_flow_mod_table_id;
+
+of_vendor_ext(nxt_role_request)      ->	{nicira, 10};
+of_vendor_ext(nxt_role_reply)        ->	{nicira, 11};
+of_vendor_ext(nxt_set_flow_format)   ->	{nicira, 12};
+of_vendor_ext(nxt_flow_mod)          ->	{nicira, 13};
+of_vendor_ext(nxt_flow_removed)      ->	{nicira, 14};
+of_vendor_ext(nxt_flow_mod_table_id) ->	{nicira, 15}.
+
+nxt_role(0) -> other;
+nxt_role(1) -> master;
+nxt_role(2) -> slave;
+nxt_role(X) when is_integer(X) -> X;
+
+nxt_role(other)  -> 0;
+nxt_role(master) -> 1;
+nxt_role(slave)  -> 2.
+
+
+nxt_action(0)  -> nxast_snat__obsolete;
+nxt_action(1)  -> nxast_resubmit;
+nxt_action(2)  -> nxast_set_tunnel;
+nxt_action(3)  -> nxast_drop_spoofed_arp__obsolete;
+nxt_action(4)  -> nxast_set_queue;
+nxt_action(5)  -> nxast_pop_queue;
+nxt_action(6)  -> nxast_reg_move;
+nxt_action(7)  -> nxast_reg_load;
+nxt_action(8)  -> nxast_note;
+nxt_action(9)  -> nxast_set_tunnel64;
+nxt_action(10) -> nxast_multipath;
+nxt_action(11) -> nxast_autopath;
+nxt_action(X) when is_integer(X) -> X;
+				  
+nxt_action(nxast_snat__obsolete) -> 0;            %% No longer used.
+nxt_action(nxast_resubmit)       -> 1;            %% struct nx_action_resubmit
+nxt_action(nxast_set_tunnel)     -> 2;            %% struct nx_action_set_tunnel
+nxt_action(nxast_drop_spoofed_arp__obsolete) -> 3;
+nxt_action(nxast_set_queue)      -> 4;            %% struct nx_action_set_queue
+nxt_action(nxast_pop_queue)      -> 5;            %% struct nx_action_pop_queue
+nxt_action(nxast_reg_move)       -> 6;            %% struct nx_action_reg_move
+nxt_action(nxast_reg_load)       -> 7;            %% struct nx_action_reg_load
+nxt_action(nxast_note)           -> 8;            %% struct nx_action_note
+nxt_action(nxast_set_tunnel64)   -> 9;            %% struct nx_action_set_tunnel64
+nxt_action(nxast_multipath)      -> 10;           %% struct nx_action_multipath
+nxt_action(nxast_autopath)       -> 11.           %% struct nx_action_autopath
+
 protocol(NwProto)
   when is_atom(NwProto) ->
 	gen_socket:protocol(NwProto);
 protocol(NwProto) ->
 	NwProto.
+
+not_impl() ->
+	throw(not_implemented_yet).
 
 %%%===================================================================
 %%% Decode
@@ -368,6 +433,13 @@ decode_binstring(Str) ->
 %%%===================================================================
 %%% Encode
 %%%===================================================================
+encode_ovs_vendor({Vendor, Cmd}, Data)
+  when is_atom(Vendor) ->
+	encode_ovs_vendor({Vendor, Cmd}, Data);
+encode_ovs_vendor({Vendor, Cmd}, Data) ->
+	<< Vendor:8, Cmd:8, Data/binary >>;
+encode_ovs_vendor(Cmd, Data) ->
+	encode_ovs_vendor(of_vendor_ext(Cmd), Data).
 
 -spec encode_ofp_switch_features(integer(), integer(), integer(), integer(), integer(), binary()) -> binary().
 encode_ofp_switch_features(DataPathId, NBuffers, NTables, Capabilities, Actions, Ports) ->
@@ -416,6 +488,11 @@ encode_ofp_port_status(Reason, Port) ->
 encode_ofp_switch_config(Flags, MissSendLen) ->
 	<<Flags:16, MissSendLen:16>>.
 
+bool(true) -> 1;
+bool(false) -> 0;
+bool(0) -> false;
+bool(_) -> true.
+	
 int_maybe_undefined(X) when is_integer(X) -> X;
 int_maybe_undefined(undefined) -> 0.
 
@@ -473,8 +550,8 @@ encode_ofs_action_enqueue(Port, QueueId) ->
 	<<11:16, 16:16, Port0:16, 0:48, QueueId:32>>.
 
 encode_ofs_action_vendor(Vendor, Msg) ->
-	Length = pad_length(8, size(Msg) + 8),
-	pad_to(8, <<16#FFFF:16, Length:16, Vendor:32, Msg>>).
+	Data = pad_to(8, Msg),
+	pad_to(8, <<16#FFFF:16, (size(Data) + 8):16, Vendor:32, Data/binary>>).
 
 -spec encode_ofp_flow_mod(binary(), integer(), integer(), integer(), integer(), integer(), integer(), integer()|atom(), integer(), binary()|list(binary)) -> binary().
 encode_ofp_flow_mod(Match, Cookie, Command, IdleTimeout, HardTimeout, Priority,
@@ -502,6 +579,181 @@ encode_ofp_packet_out(BufferId, InPort, Actions, Data) when is_list(Actions) ->
 encode_ofp_packet_out(BufferId, InPort, Actions, Data) ->
 	InPort0 = ofp_port(InPort),
 	<<BufferId:32, InPort0:16, (size(Actions)):16, Actions/binary, Data/binary>>.
+
+-spec encode_nxt_flow_mod_table_id(integer()|boolean()) -> binary().
+encode_nxt_flow_mod_table_id(Set)
+  when is_boolean(Set)->
+	encode_nxt_flow_mod_table_id(bool(Set));
+encode_nxt_flow_mod_table_id(Set) ->
+	encode_ovs_vendor(nxt_flow_mod_table_id, <<Set:8>>).
+
+-spec encode_nxt_role_request(integer()|atom()) -> binary().
+encode_nxt_role_request(Role)
+  when is_atom(Role) ->
+	encode_nxt_role_request(nxt_role(Role));
+encode_nxt_role_request(Role) ->
+	encode_ovs_vendor(nxt_role_request, <<Role:32>>).
+
+enc_nxm_match(<<_Vendor:16, _Field:7, 1:1, Length:8>> = Header, {Value, Mask})
+  when is_binary(Value), is_binary(Mask) ->
+	BitLen = Length * 4,
+	<<Header/binary, Value:BitLen, Mask:BitLen>>;
+enc_nxm_match(<<_Vendor:16, _Field:7, 1:0, Length:8>> = Header, Value)
+  when is_binary(Value) ->
+	BitLen = Length * 8,
+	<<Header/binary, Value:BitLen>>.
+	
+encode_nx_matches([], Acc) ->
+	list_to_binary(lists:reverse(Acc));
+encode_nx_matches([{Header, Value}|Rest], Acc) ->
+	encode_nx_matches(Rest, [enc_nxm_match(nxm_header(Header), Value)|Acc]).
+encode_nx_matches(NxMatch) ->
+	 encode_nx_matches(NxMatch, []).
+
+encode_nx_flow_mod(Cookie, Command, IdleTimeout, HardTimeout, Priority,
+				   BufferId, OutPort, Flags, NxMatch, Actions) when is_list(Actions) ->
+	encode_nx_flow_mod(Cookie, Command, IdleTimeout, HardTimeout, Priority,
+					   BufferId, OutPort, Flags, NxMatch, list_to_binary(Actions));
+encode_nx_flow_mod(Cookie, Command, IdleTimeout, HardTimeout, Priority,
+				   BufferId, OutPort, Flags, NxMatch, Actions) ->
+	OutPort0 = ofp_port(OutPort),
+	Cmd = ofp_flow_mod_command(Command),
+	encode_ovs_vendor(nxt_flow_mod,
+					  <<Cookie:64, Cmd:16, IdleTimeout:16, HardTimeout:16,
+						Priority:16, BufferId:32, OutPort0:16, Flags:16,
+						(size(NxMatch)):16, 0:48, (pad_to(8, NxMatch))/binary,
+						Actions/binary>>).
+
+
+-define(NXM_HEADER(Vendor, Field, HasMask, Length),	<<Vendor:16, Field:7, HasMask:1, Length:8>>).
+-define(NXM_HEADER(Vendor, Field, Length), ?NXM_HEADER(Vendor, Field, 0, Length)).
+-define(NXM_HEADER_W(Vendor, Field, Length), ?NXM_HEADER(Vendor, Field, 1, ((Length) * 2))).
+
+-define(NXM_OF_IN_PORT,    ?NXM_HEADER  (16#0000,  0, 2)).
+-define(NXM_OF_ETH_DST,    ?NXM_HEADER  (16#0000,  1, 6)).
+-define(NXM_OF_ETH_DST_W,  ?NXM_HEADER_W(16#0000,  1, 6)).
+-define(NXM_OF_ETH_SRC,    ?NXM_HEADER  (16#0000,  2, 6)).
+-define(NXM_OF_ETH_TYPE,   ?NXM_HEADER  (16#0000,  3, 2)).
+-define(NXM_OF_VLAN_TCI,   ?NXM_HEADER  (16#0000,  4, 2)).
+-define(NXM_OF_VLAN_TCI_W, ?NXM_HEADER_W(16#0000,  4, 2)).
+-define(NXM_OF_IP_TOS,     ?NXM_HEADER  (16#0000,  5, 1)).
+-define(NXM_OF_IP_PROTO,   ?NXM_HEADER  (16#0000,  6, 1)).
+-define(NXM_OF_IP_SRC,     ?NXM_HEADER  (16#0000,  7, 4)).
+-define(NXM_OF_IP_SRC_W,   ?NXM_HEADER_W(16#0000,  7, 4)).
+-define(NXM_OF_IP_DST,     ?NXM_HEADER  (16#0000,  8, 4)).
+-define(NXM_OF_IP_DST_W,   ?NXM_HEADER_W(16#0000,  8, 4)).
+-define(NXM_OF_TCP_SRC,    ?NXM_HEADER  (16#0000,  9, 2)).
+-define(NXM_OF_TCP_DST,    ?NXM_HEADER  (16#0000, 10, 2)).
+-define(NXM_OF_UDP_SRC,    ?NXM_HEADER  (16#0000, 11, 2)).
+-define(NXM_OF_UDP_DST,    ?NXM_HEADER  (16#0000, 12, 2)).
+-define(NXM_OF_ICMP_TYPE,  ?NXM_HEADER  (16#0000, 13, 1)).
+-define(NXM_OF_ICMP_CODE,  ?NXM_HEADER  (16#0000, 14, 1)).
+-define(NXM_OF_ARP_OP,     ?NXM_HEADER  (16#0000, 15, 2)).
+-define(NXM_OF_ARP_SPA,    ?NXM_HEADER  (16#0000, 16, 4)).
+-define(NXM_OF_ARP_SPA_W,  ?NXM_HEADER_W(16#0000, 16, 4)).
+-define(NXM_OF_ARP_TPA,    ?NXM_HEADER  (16#0000, 17, 4)).
+-define(NXM_OF_ARP_TPA_W,  ?NXM_HEADER_W(16#0000, 17, 4)).
+
+-define(NXM_NX_TUN_ID,     ?NXM_HEADER  (16#0001, 16, 8)).
+-define(NXM_NX_TUN_ID_W,   ?NXM_HEADER_W(16#0001, 16, 8)).
+-define(NXM_NX_ARP_SHA,    ?NXM_HEADER  (16#0001, 17, 6)).
+-define(NXM_NX_ARP_THA,    ?NXM_HEADER  (16#0001, 18, 6)).
+
+-define(NXM_NX_IPV6_SRC,    ?NXM_HEADER  (16#0001, 19, 16)).
+-define(NXM_NX_IPV6_SRC_W,  ?NXM_HEADER_W(16#0001, 19, 16)).
+-define(NXM_NX_IPV6_DST,    ?NXM_HEADER  (16#0001, 20, 16)).
+-define(NXM_NX_IPV6_DST_W,  ?NXM_HEADER_W(16#0001, 20, 16)).
+-define(NXM_NX_ICMPV6_TYPE, ?NXM_HEADER  (16#0001, 21, 1)).
+-define(NXM_NX_ICMPV6_CODE, ?NXM_HEADER  (16#0001, 22, 1)).
+-define(NXM_NX_ND_TARGET,   ?NXM_HEADER  (16#0001, 23, 16)).
+-define(NXM_NX_ND_SLL,      ?NXM_HEADER  (16#0001, 24, 6)).
+-define(NXM_NX_ND_TLL,      ?NXM_HEADER  (16#0001, 25, 6)).
+
+nxm_header(nxm_of_in_port)		-> ?NXM_OF_IN_PORT;
+nxm_header(nxm_of_eth_dst)		-> ?NXM_OF_ETH_DST;
+nxm_header(nxm_of_eth_dst_w)	-> ?NXM_OF_ETH_DST_W;
+nxm_header(nxm_of_eth_src)		-> ?NXM_OF_ETH_SRC;
+nxm_header(nxm_of_eth_type)		-> ?NXM_OF_ETH_TYPE;
+nxm_header(nxm_of_vlan_tci)		-> ?NXM_OF_VLAN_TCI;
+nxm_header(nxm_of_vlan_tci_w)	-> ?NXM_OF_VLAN_TCI_W;
+nxm_header(nxm_of_ip_tos)		-> ?NXM_OF_IP_TOS;
+nxm_header(nxm_of_ip_proto)		-> ?NXM_OF_IP_PROTO;
+nxm_header(nxm_of_ip_src)		-> ?NXM_OF_IP_SRC;
+nxm_header(nxm_of_ip_src_w)		-> ?NXM_OF_IP_SRC_W;
+nxm_header(nxm_of_ip_dst)		-> ?NXM_OF_IP_DST;
+nxm_header(nxm_of_ip_dst_w)		-> ?NXM_OF_IP_DST_W;
+nxm_header(nxm_of_tcp_src)		-> ?NXM_OF_TCP_SRC;
+nxm_header(nxm_of_tcp_dst)		-> ?NXM_OF_TCP_DST;
+nxm_header(nxm_of_udp_src)		-> ?NXM_OF_UDP_SRC;
+nxm_header(nxm_of_udp_dst)		-> ?NXM_OF_UDP_DST;
+nxm_header(nxm_of_icmp_type)	-> ?NXM_OF_ICMP_TYPE;
+nxm_header(nxm_of_icmp_code)	-> ?NXM_OF_ICMP_CODE;
+nxm_header(nxm_of_arp_op)		-> ?NXM_OF_ARP_OP;
+nxm_header(nxm_of_arp_spa)		-> ?NXM_OF_ARP_SPA;
+nxm_header(nxm_of_arp_spa_w)	-> ?NXM_OF_ARP_SPA_W;
+nxm_header(nxm_of_arp_tpa)		-> ?NXM_OF_ARP_TPA;
+nxm_header(nxm_of_arp_tpa_w)	-> ?NXM_OF_ARP_TPA_W;
+
+nxm_header(nxm_nx_tun_id)		-> ?NXM_NX_TUN_ID;
+nxm_header(nxm_nx_tun_id_w)		-> ?NXM_NX_TUN_ID_W;
+nxm_header(nxm_nx_arp_sha)		-> ?NXM_NX_ARP_SHA;
+nxm_header(nxm_nx_arp_tha)		-> ?NXM_NX_ARP_THA;
+
+nxm_header(nxm_nx_ipv6_src)		-> ?NXM_NX_IPV6_SRC;
+nxm_header(nxm_nx_ipv6_src_w)	-> ?NXM_NX_IPV6_SRC_W;
+nxm_header(nxm_nx_ipv6_dst)		-> ?NXM_NX_IPV6_DST;
+nxm_header(nxm_nx_ipv6_dst_w)	-> ?NXM_NX_IPV6_DST_W;
+nxm_header(nxm_nx_icmpv6_type)	-> ?NXM_NX_ICMPV6_TYPE;
+nxm_header(nxm_nx_icmpv6_code)	-> ?NXM_NX_ICMPV6_CODE;
+nxm_header(nxm_nx_nd_target)	-> ?NXM_NX_ND_TARGET;
+nxm_header(nxm_nx_nd_sll)		-> ?NXM_NX_ND_SLL;
+nxm_header(nxm_nx_nd_tll)		-> ?NXM_NX_ND_TLL;
+
+nxm_header({nxm_nx_reg, X})		-> ?NXM_HEADER  (16#0001, X, 4);
+nxm_header({nxm_nx_reg_w, X})	-> ?NXM_HEADER_W(16#0001, X, 4);
+
+nxm_header(X) when is_binary(X) -> X.
+
+encode_nx_action(Action, Data) ->
+	Act = nxt_action(Action),
+	encode_ofs_action_vendor(vendor(nicira), <<Act:16, Data/binary>>).
+
+encode_nx_action_resubmit(InPort) ->
+	encode_nx_action(nxast_resubmit, << InPort:16 >>).
+
+encode_nx_action_set_tunnel(TunId) ->
+	encode_nx_action(nxast_set_tunnel, << 0:16, TunId:32 >>).
+
+encode_nx_action_set_tunnel64(TunId) ->
+	encode_nx_action(nxast_set_tunnel64, << 0:48, TunId:64 >>).
+
+encode_nx_action_set_queue(QueueId) ->
+ 	encode_nx_action(nxast_set_queue, << 0:16, QueueId:32 >>).
+
+encode_nx_action_pop_queue() ->
+ 	encode_nx_action(nxast_pop_queue, << >>).
+
+encode_nx_action_reg_move(Nbits, SrcOfs, DstOfs, Src, Dst)
+  when is_atom(Src); is_atom(Dst); is_tuple(Dst) ->
+	encode_nx_action_reg_move(Nbits, SrcOfs, DstOfs, nxm_header(Src), nxm_header(Dst));
+encode_nx_action_reg_move(Nbits, SrcOfs, DstOfs, Src, Dst) ->
+	encode_nx_action(nxast_reg_move, << Nbits:16, SrcOfs:16, DstOfs:16, Src/binary, Dst/binary>>).
+
+encode_nx_action_reg_load(Ofs, Nbits, Dst, Value)
+  when is_atom(Dst); is_tuple(Dst) ->
+	encode_nx_action_reg_load(Ofs, Nbits, nxm_header(Dst), Value);
+encode_nx_action_reg_load(Ofs, Nbits, Dst, Value) ->
+	encode_nx_action(nxast_reg_load, << Ofs:10, Nbits:6, Dst/binary, (pad_to(8, Value))/binary >>).
+
+encode_nx_action_note(Note)
+  when is_list(Note) ->
+	encode_nx_action(nxast_action_note, list_to_binary(Note));
+encode_nx_action_note(Note)
+  when is_binary(Note) ->
+	encode_nx_action(nxast_action_note, Note).
+
+encode_nx_action_multipath(_Fields, _Basis, _Algo, _MaxLink, _Arg, _Ofs, _Nbits, _Dst) -> not_impl().
+encode_nx_action_autopath(_Ofs, _Nbits, _Dst, _Id) -> not_impl().
 
 encode_action(#ofp_action_output{port = Port, max_len = MaxLen}) ->
 	encode_ofs_action_output(Port, MaxLen);
@@ -532,6 +784,27 @@ encode_action(#ofp_action_enqueue{port = Port, queue_id = QueueId}) ->
 
 encode_action(#ofp_action_vendor_header{vendor = Vendor, msg = Msg}) ->
 	encode_ofs_action_vendor(Vendor, Msg);
+
+encode_action(#nx_action_resubmit{in_port = InPort}) ->
+	encode_nx_action_resubmit(InPort);
+encode_action(#nx_action_set_tunnel{tun_id = TunId}) ->
+	encode_nx_action_set_tunnel(TunId);
+encode_action(#nx_action_set_tunnel64{tun_id = TunId}) ->
+	encode_nx_action_set_tunnel64(TunId);
+encode_action(#nx_action_set_queue{queue_id = QueueId}) ->
+	encode_nx_action_set_queue(QueueId);
+encode_action(#nx_action_pop_queue{}) ->
+	encode_nx_action_pop_queue();
+encode_action(#nx_action_reg_move{n_bits = Nbits, src_ofs = SrcOfs, dst_ofs = DstOfs, src = Src, dst = Dst}) ->
+	encode_nx_action_reg_move(Nbits, SrcOfs, DstOfs, Src, Dst);
+encode_action(#nx_action_reg_load{ofs = Ofs, nbits = Nbits, dst = Dst, value = Value}) ->
+	encode_nx_action_reg_load(Ofs, Nbits, Dst, Value);
+encode_action(#nx_action_note{note = Note}) ->
+	encode_nx_action_note(Note);
+encode_action(#nx_action_multipath{fields = Fields, basis = Basis, algorithm = Algo, max_link = MaxLink, arg = Arg, ofs = Ofs, nbits = Nbits, dst = Dst}) ->
+	encode_nx_action_multipath(Fields, Basis, Algo, MaxLink, Arg, Ofs, Nbits, Dst);
+encode_action(#nx_action_autopath{ofs = Ofs, nbits = Nbits, dst = Dst, id = Id}) ->
+	encode_nx_action_autopath(Ofs, Nbits, Dst, Id);
 
 encode_action(Action) when is_binary(Action) ->
 	pad_to(8, Action).
@@ -586,7 +859,21 @@ encode_msg(#ofp_flow_removed{match = Match, cookie = Cookie, priority = Priority
 							IdleTimeout, PacketCount, ByteCount);
 
 encode_msg(#ofp_packet_out{buffer_id = BufferId, in_port = InPort, actions = Actions, data = Data}) ->
-		   encode_ofp_packet_out(BufferId, InPort, encode_actions(Actions), Data);
+	encode_ofp_packet_out(BufferId, InPort, encode_actions(Actions), Data);
+
+encode_msg(#nxt_flow_mod_table_id{set = Set}) ->
+	encode_nxt_flow_mod_table_id(Set);
+
+encode_msg(#nxt_role_request{role = Role}) ->
+	encode_nxt_role_request(Role);
+
+encode_msg(#nx_flow_mod{cookie = Cookie, command = Command,
+						idle_timeout = IdleTimeout, hard_timeout = HardTimeout,
+						priority = Priority, buffer_id = BufferId,
+						out_port = OutPort, flags = Flags, nx_match = NxMatch, actions = Actions}) ->
+	encode_nx_flow_mod(Cookie, ofp_flow_mod_command(Command), IdleTimeout, HardTimeout, Priority,
+					   BufferId, OutPort, enc_flags(ofp_flow_mod_flags(), Flags), 
+					   encode_nx_matches(NxMatch), encode_actions(Actions));
 
 encode_msg(Msg)
   when is_binary(Msg) ->
