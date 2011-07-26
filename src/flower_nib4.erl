@@ -39,4 +39,9 @@ lookup(<<IP:32/integer>>, #nib4{nib4 = Nib4} = Nib)
 							   gb_trees:lookup(N, Tree);
 						  (_Index, _Tree, A) ->
 							   A
-					   end, none, Nib4).
+					   end, none, Nib4);
+
+lookup({<<Network:32/integer>>, Mask}, #nib4{nib4 = Nib4} = Nib)
+  when Mask > 0, Mask =< 32, is_record(Nib, nib4) ->
+	N = Network band (16#FFFFFFFF bsl (32 - Mask)),
+	gb_trees:lookup(N, array:get(Mask, Nib4)).
