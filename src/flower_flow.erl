@@ -36,7 +36,7 @@ decode_ethertype(_EtherType, <<?LLC_DSAP_SNAP:8/integer, ?LLC_SSAP_SNAP:8/intege
 	decode_payload(flower_packet:eth_type(SnapType), PayLoad, Flow#flow{dl_type = flower_packet:eth_type(SnapType), l3 = PayLoad});
 
 decode_ethertype(_EtherType, PayLoad, Flow) ->
-	decode_payload(none, PayLoad, Flow#flow{dl_type = ?FLOW_DL_TYPE_NONE, l3 = PayLoad}).
+	decode_payload(none, PayLoad, Flow#flow{dl_type = none, l3 = PayLoad}).
 
 decode_payload(ip, <<_IhlVer:8/integer, Tos:8/integer, _TotLen:16/integer,
 					 _Id:16/integer, FragOff:16/integer, _Ttl:8/integer, Proto:8/integer,
@@ -70,6 +70,10 @@ decode_payload(arp, <<1:16/integer, ?ETH_TYPE_IP:16/integer, ?ETH_ADDR_LEN:8/int
 			Flow1#flow{nw_src = Spa, nw_dst = Tpa, arp_sha = Sha, arp_tha = Tha};
 		true -> Flow1
 	end;
+
+decode_payload(Type, Pkt, Flow)
+  when Type == loop; Type == moprc ->
+	Flow#flow{l4 = Pkt};
 
 decode_payload(Type, Pkt, Flow) ->
 	io:format("decode_payload: ~p, ~p, ~p~n",[Type, Pkt, Flow]),

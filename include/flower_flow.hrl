@@ -5,8 +5,6 @@
 -define(ARP_OP_REVREQUEST,       3).       %% request to resolve pa given ha
 -define(ARP_OP_REVREPLY,         4).       %% response giving protocol address
 
--define(FLOW_DL_TYPE_NONE, 16#5ff).
-
 -define(IP_DSCP_MASK, 16#fc).
 
 -define(IP_DONT_FRAGMENT,  16#4000).

@@ -7,12 +7,15 @@
 %%% Created : 28 Jun 2011 by Andreas Schultz <aschultz@tpip.net>
 %%%-------------------------------------------------------------------
 
--define(ETH_TYPE_MIN,   16#600).
--define(ETH_TYPE_IP,   16#0800).
--define(ETH_TYPE_ARP,  16#0806).
--define(ETH_TYPE_VLAN, 16#8100).
--define(ETH_TYPE_IPV6, 16#86dd).
--define(ETH_TYPE_LACP, 16#8809).
+-define(ETH_TYPE_NONE,   16#5ff).
+-define(ETH_TYPE_MIN,    16#600).
+-define(ETH_TYPE_IP,    16#0800).
+-define(ETH_TYPE_ARP,   16#0806).
+-define(ETH_TYPE_MOPRC, 16#6002).
+-define(ETH_TYPE_VLAN,  16#8100).
+-define(ETH_TYPE_IPV6,  16#86dd).
+-define(ETH_TYPE_LACP,  16#8809).
+-define(ETH_TYPE_LOOP,  16#9000).
 
 -define(ETH_BROADCAST, <<255,255,255,255,255,255>>).
 

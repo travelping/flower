@@ -68,6 +68,8 @@ ofp_vlan_match(#ofp_match{wildcards = Wildcards} = Match, both, {DlPCP, DlVID}) 
 	Match#ofp_match{wildcards = Wildcards band (bnot (?OFPFW_DL_VLAN bor ?OFPFW_DL_VLAN_PCP)), dl_vlan = DlVID, dl_vlan_pcp = DlPCP}.
 
 -spec ofp_match(term(), ofp_match()) -> ofp_match().
+ofp_match({_, undefined}, Match) ->
+	Match;
 ofp_match({in_port, InPort}, #ofp_match{wildcards = Wildcards} = Match) ->
 	Match#ofp_match{wildcards = Wildcards band (bnot ?OFPFW_IN_PORT), in_port = InPort};
 ofp_match({vlan_tci, none}, #ofp_match{wildcards = Wildcards} = Match) ->

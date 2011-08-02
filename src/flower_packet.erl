@@ -93,18 +93,24 @@ vendor(?VENDOR_NICIRA) -> nicira;
 vendor(X) when is_integer(X) -> X;
 vendor(nicira) -> ?VENDOR_NICIRA.
 	 
-eth_type(?ETH_TYPE_IP) -> ip;
-eth_type(?ETH_TYPE_ARP) -> arp;
-eth_type(?ETH_TYPE_VLAN) -> vlan;
-eth_type(?ETH_TYPE_IPV6) -> ipv6;
-eth_type(?ETH_TYPE_LACP) -> lacp;
+eth_type(?ETH_TYPE_IP)    -> ip;
+eth_type(?ETH_TYPE_ARP)   -> arp;
+eth_type(?ETH_TYPE_MOPRC) -> moprc;
+eth_type(?ETH_TYPE_VLAN)  -> vlan;
+eth_type(?ETH_TYPE_IPV6)  -> ipv6;
+eth_type(?ETH_TYPE_LACP)  -> lacp;
+eth_type(?ETH_TYPE_LOOP)  -> loop;
+eth_type(X) when is_integer(X), X =< ?ETH_TYPE_MIN -> none;
 eth_type(X) when is_integer(X) -> X;
 													   
-eth_type(ip) ->   ?ETH_TYPE_IP;
-eth_type(arp) ->  ?ETH_TYPE_ARP;
-eth_type(vlan) -> ?ETH_TYPE_VLAN;
-eth_type(ipv6) -> ?ETH_TYPE_IPV6;
-eth_type(lacp) -> ?ETH_TYPE_LACP;
+eth_type(none)  -> ?ETH_TYPE_NONE;
+eth_type(ip)    -> ?ETH_TYPE_IP;
+eth_type(arp)   -> ?ETH_TYPE_ARP;
+eth_type(moprc) -> ?ETH_TYPE_MOPRC;
+eth_type(vlan)  -> ?ETH_TYPE_VLAN;
+eth_type(ipv6)  -> ?ETH_TYPE_IPV6;
+eth_type(lacp)  -> ?ETH_TYPE_LACP;
+eth_type(loop)  -> ?ETH_TYPE_LOOP;
 eth_type(undefined) -> 0.
 
 ofpt(0)		-> hello;
@@ -502,6 +508,18 @@ bin_maybe_undefined(undefined, Len) -> pad_to(Len, <<0>>).
 -spec encode_ofp_match(integer(), integer()|atom(), binary(), binary(), integer(),
 					   integer(), integer()|atom(), integer(), integer()|atom(),
 					   binary(), binary(), integer(), integer()) -> binary().
+encode_ofp_match(Wildcards, InPort, DlSrc, DlDst, DlVlan, DlVlanPcp, DlType,
+				 NwTos, NwProto, NwSrc, NwDst, TpSrc, TpDst) when DlType == arp ->
+	InPort0 = ofp_port(InPort),
+	DlType0 = eth_type(DlType),
+	NwProto0 = int_maybe_undefined(flower_arp:op(NwProto)),
+	NwSrc0 = bin_maybe_undefined(NwSrc, 4),
+	NwDst0 = bin_maybe_undefined(NwDst, 4),
+	TpSrc0 = int_maybe_undefined(TpSrc),
+	TpDst0 = int_maybe_undefined(TpDst),
+	<<Wildcards:32, InPort0:16, DlSrc:6/binary, DlDst:6/binary, DlVlan:16, DlVlanPcp:8,
+	  0:8, DlType0:16, NwTos:8, NwProto0:8, 0:16, NwSrc0:4/binary, NwDst0:4/binary, TpSrc0:16, TpDst0:16>>;
+
 encode_ofp_match(Wildcards, InPort, DlSrc, DlDst, DlVlan, DlVlanPcp, DlType,
 				 NwTos, NwProto, NwSrc, NwDst, TpSrc, TpDst) ->
 	InPort0 = ofp_port(InPort),
