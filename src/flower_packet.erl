@@ -215,6 +215,8 @@ ofp_flow_mod_command(_)	-> error.
 ofp_flow_mod_flags() ->
 	[send_flow_rem, check_overlap, emerg].
 
+-spec ofp_port(non_neg_integer()) -> ofp_port();
+			  (ofp_port()) -> non_neg_integer().
 %% Port numbering.  Physical ports are numbered starting from 1.
 ofp_port(16#fff8) -> in_port;
 ofp_port(16#fff9) -> table;
@@ -252,6 +254,8 @@ ofp_port_reason(add)    -> 0;
 ofp_port_reason(delete) -> 1;
 ofp_port_reason(modify) -> 2.
 
+-spec of_vendor_ext(of_vendor_ext()) -> {atom(), non_neg_integer()};
+				   ({atom(), non_neg_integer()}) -> of_vendor_ext().
 of_vendor_ext({nicira, 10}) ->	nxt_role_request;
 of_vendor_ext({nicira, 11}) ->	nxt_role_reply;
 of_vendor_ext({nicira, 12}) ->	nxt_set_flow_format;
@@ -274,7 +278,6 @@ nxt_role(X) when is_integer(X) -> X;
 nxt_role(other)  -> 0;
 nxt_role(master) -> 1;
 nxt_role(slave)  -> 2.
-
 
 nxt_action(0)  -> nxast_snat__obsolete;
 nxt_action(1)  -> nxast_resubmit;
@@ -309,6 +312,7 @@ protocol(NwProto)
 protocol(NwProto) ->
 	NwProto.
 
+-spec not_impl() -> no_return().
 not_impl() ->
 	throw(not_implemented_yet).
 
@@ -338,7 +342,7 @@ decode_msg(set_config, <<Flags:16/integer, MissSendLen:16/integer>>) ->
 
 decode_msg(flow_mod, <<Match:40/bytes, Cookie:64/integer, Command:16/integer, IdleTimeout:16/integer, HardTimeout:16/integer,
 					   Priority:16/integer, BufferId:32/integer, OutPort:16/integer, Flags:16/integer, Actions/binary>>) ->
-	#ofp_flow_mod{match = decode_ofp_match(Match), cookie = Cookie, command = Command,
+	#ofp_flow_mod{match = decode_ofp_match(Match), cookie = Cookie, command = ofp_flow_mod_command(Command),
 				  idle_timeout = IdleTimeout, hard_timeout = HardTimeout,
 				  priority = Priority, buffer_id = BufferId,
 				  out_port = ofp_port(OutPort), flags = dec_flags(ofp_flow_mod_flags(), Flags), actions = decode_actions(Actions)};
@@ -356,6 +360,7 @@ decode_msg(port_status, <<Reason:8/integer, _Pad:7/bytes, PhyPort/binary>>) ->
 decode_msg(_, Msg) ->
 	Msg.
 
+-spec decode_ofp_match(Match :: binary()) -> #ofp_match{}.
 decode_ofp_match(<<Wildcards:32/integer, InPort:16/integer,
 				   DlSrc:6/binary, DlDst:6/binary, DlVlan:16/integer, DlVlanPcp:8/integer,
 				   _Pad1:1/bytes, 
@@ -366,6 +371,7 @@ decode_ofp_match(<<Wildcards:32/integer, InPort:16/integer,
 			   nw_tos = NwTos, nw_proto = protocol(NwProto), nw_src = NwSrc, nw_dst = NwDst,
 			   tp_src = TpSrc, tp_dst = TpDst}.
 
+-spec decode_action(binary()) -> ofp_action().
 decode_action(<<0:16, 8:16, Port:16/integer, MaxLen:16/integer>>) ->
 	#ofp_action_output{port = ofp_port(Port), max_len = MaxLen};
 decode_action(<<1:16, 8:16, VlanVid:16/integer, _:16>>) ->
@@ -427,21 +433,18 @@ decode_phy_ports(Msg) ->
 	decode_phy_ports(Msg, []).
 
 decode_binstring(Str) ->
-	case binary:split(Str, <<0>>) of
-		[Name|_Rest] ->
-			Name;
-		Name when is_binary(Name) ->
-			Name;
-		_ ->
-			<<>>
-	end.
+	[Name|_Rest] = binary:split(Str, <<0>>),
+	Name.
 
 %%%===================================================================
 %%% Encode
 %%%===================================================================
+-spec encode_ovs_vendor({Vendor :: atom(), Cmd :: non_neg_integer()}, binary()) -> binary();
+					   ({Vendor :: non_neg_integer(), Cmd :: non_neg_integer()}, binary()) -> binary();
+					   (Cmd :: of_vendor_ext(), binary()) -> binary().
 encode_ovs_vendor({Vendor, Cmd}, Data)
   when is_atom(Vendor) ->
-	encode_ovs_vendor({Vendor, Cmd}, Data);
+	encode_ovs_vendor({vendor(Vendor), Cmd}, Data);
 encode_ovs_vendor({Vendor, Cmd}, Data) ->
 	<< Vendor:8, Cmd:8, Data/binary >>;
 encode_ovs_vendor(Cmd, Data) ->
@@ -494,6 +497,8 @@ encode_ofp_port_status(Reason, Port) ->
 encode_ofp_switch_config(Flags, MissSendLen) ->
 	<<Flags:16, MissSendLen:16>>.
 
+-spec bool(boolean()) -> 0 | 1;
+		  (non_neg_integer()) -> boolean().
 bool(true) -> 1;
 bool(false) -> 0;
 bool(0) -> false;
@@ -612,14 +617,16 @@ encode_nxt_role_request(Role)
 encode_nxt_role_request(Role) ->
 	encode_ovs_vendor(nxt_role_request, <<Role:32>>).
 
+-spec enc_nxm_match(Header :: binary(), {Value :: binary(), Mask :: binary()}) -> binary();
+				   (Header :: binary(), Value :: binary()) -> binary().
 enc_nxm_match(<<_Vendor:16, _Field:7, 1:1, Length:8>> = Header, {Value, Mask})
   when is_binary(Value), is_binary(Mask) ->
 	BitLen = Length * 4,
-	<<Header/binary, Value:BitLen, Mask:BitLen>>;
-enc_nxm_match(<<_Vendor:16, _Field:7, 1:0, Length:8>> = Header, Value)
+	<<Header/binary, Value:BitLen/binary, Mask:BitLen/binary>>;
+enc_nxm_match(<<_Vendor:16, _Field:7, 0:1, Length:8>> = Header, Value)
   when is_binary(Value) ->
 	BitLen = Length * 8,
-	<<Header/binary, Value:BitLen>>.
+	<<Header/binary, Value:BitLen/binary>>.
 	
 encode_nx_matches([], Acc) ->
 	list_to_binary(lists:reverse(Acc));
@@ -628,10 +635,16 @@ encode_nx_matches([{Header, Value}|Rest], Acc) ->
 encode_nx_matches(NxMatch) ->
 	 encode_nx_matches(NxMatch, []).
 
-encode_nx_flow_mod(Cookie, Command, IdleTimeout, HardTimeout, Priority,
-				   BufferId, OutPort, Flags, NxMatch, Actions) when is_list(Actions) ->
-	encode_nx_flow_mod(Cookie, Command, IdleTimeout, HardTimeout, Priority,
-					   BufferId, OutPort, Flags, NxMatch, list_to_binary(Actions));
+-spec encode_nx_flow_mod(Cookie :: non_neg_integer(),
+						 Command :: term(),
+						 IdleTimeout :: non_neg_integer(),
+						 HardTimeout :: non_neg_integer(),
+						 Priority :: non_neg_integer(),
+						 BufferId :: non_neg_integer(),
+						 OutPort :: ofp_port(),
+						 Flags :: non_neg_integer(),
+						 NxMatch :: binary(),
+						 Actions :: binary()) -> binary().
 encode_nx_flow_mod(Cookie, Command, IdleTimeout, HardTimeout, Priority,
 				   BufferId, OutPort, Flags, NxMatch, Actions) ->
 	OutPort0 = ofp_port(OutPort),
@@ -687,6 +700,7 @@ encode_nx_flow_mod(Cookie, Command, IdleTimeout, HardTimeout, Priority,
 -define(NXM_NX_ND_SLL,      ?NXM_HEADER  (16#0001, 24, 6)).
 -define(NXM_NX_ND_TLL,      ?NXM_HEADER  (16#0001, 25, 6)).
 
+-spec nxm_header(Header :: nxm_header() | binary()) -> binary().
 nxm_header(nxm_of_in_port)		-> ?NXM_OF_IN_PORT;
 nxm_header(nxm_of_eth_dst)		-> ?NXM_OF_ETH_DST;
 nxm_header(nxm_of_eth_dst_w)	-> ?NXM_OF_ETH_DST_W;
@@ -732,45 +746,64 @@ nxm_header({nxm_nx_reg_w, X})	-> ?NXM_HEADER_W(16#0001, X, 4);
 
 nxm_header(X) when is_binary(X) -> X.
 
+-spec encode_nx_action(Action :: nxt_action(), Data :: binary()) -> binary().
 encode_nx_action(Action, Data) ->
 	Act = nxt_action(Action),
 	encode_ofs_action_vendor(vendor(nicira), <<Act:16, Data/binary>>).
 
+-spec encode_nx_action_resubmit(InPort :: non_neg_integer()) -> binary().
 encode_nx_action_resubmit(InPort) ->
 	encode_nx_action(nxast_resubmit, << InPort:16 >>).
 
+-spec encode_nx_action_set_tunnel(TunId :: non_neg_integer()) -> binary().
 encode_nx_action_set_tunnel(TunId) ->
 	encode_nx_action(nxast_set_tunnel, << 0:16, TunId:32 >>).
 
+-spec encode_nx_action_set_tunnel64(TunId :: non_neg_integer()) -> binary().
 encode_nx_action_set_tunnel64(TunId) ->
 	encode_nx_action(nxast_set_tunnel64, << 0:48, TunId:64 >>).
 
+-spec encode_nx_action_set_queue(QueueId :: non_neg_integer()) -> binary().
 encode_nx_action_set_queue(QueueId) ->
  	encode_nx_action(nxast_set_queue, << 0:16, QueueId:32 >>).
 
+-spec encode_nx_action_pop_queue() -> binary().
 encode_nx_action_pop_queue() ->
  	encode_nx_action(nxast_pop_queue, << >>).
 
+-spec encode_nx_action_reg_move(Nbits :: non_neg_integer(),
+								SrcOfs :: non_neg_integer(),
+								DstOfs :: non_neg_integer(),
+								Src :: binary() | nxm_header(),
+								Dst :: binary() | nxm_header()) -> binary().
 encode_nx_action_reg_move(Nbits, SrcOfs, DstOfs, Src, Dst)
   when is_atom(Src); is_atom(Dst); is_tuple(Dst) ->
 	encode_nx_action_reg_move(Nbits, SrcOfs, DstOfs, nxm_header(Src), nxm_header(Dst));
 encode_nx_action_reg_move(Nbits, SrcOfs, DstOfs, Src, Dst) ->
 	encode_nx_action(nxast_reg_move, << Nbits:16, SrcOfs:16, DstOfs:16, Src/binary, Dst/binary>>).
 
+-spec encode_nx_action_reg_load(Ofs :: non_neg_integer(),
+								Nbits :: non_neg_integer(),
+								Dst :: binary() | nxm_header(),
+								Value :: binary()) -> binary().
 encode_nx_action_reg_load(Ofs, Nbits, Dst, Value)
   when is_atom(Dst); is_tuple(Dst) ->
 	encode_nx_action_reg_load(Ofs, Nbits, nxm_header(Dst), Value);
 encode_nx_action_reg_load(Ofs, Nbits, Dst, Value) ->
 	encode_nx_action(nxast_reg_load, << Ofs:10, Nbits:6, Dst/binary, (pad_to(8, Value))/binary >>).
 
+-spec encode_nx_action_note(list() | binary()) -> binary().
 encode_nx_action_note(Note)
   when is_list(Note) ->
-	encode_nx_action(nxast_action_note, list_to_binary(Note));
+	encode_nx_action(nxast_note, list_to_binary(Note));
 encode_nx_action_note(Note)
   when is_binary(Note) ->
-	encode_nx_action(nxast_action_note, Note).
+	encode_nx_action(nxast_note, Note).
 
+-spec encode_nx_action_multipath(term(),term(),term(),term(),term(),term(),term(),term()) -> no_return().
 encode_nx_action_multipath(_Fields, _Basis, _Algo, _MaxLink, _Arg, _Ofs, _Nbits, _Dst) -> not_impl().
+
+-spec encode_nx_action_autopath(term(),term(),term(),term()) -> no_return().
 encode_nx_action_autopath(_Ofs, _Nbits, _Dst, _Id) -> not_impl().
 
 encode_action(#ofp_action_output{port = Port, max_len = MaxLen}) ->
