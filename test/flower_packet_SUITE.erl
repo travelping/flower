@@ -149,13 +149,86 @@ test_set_config(_Config) ->
 	Sw = flower_packet:encode(flower_packet:decode(Sw)),
 	ok.
 
+test_nx_flow_mod(_Config) ->
+	NxMatches = [
+				  {nxm_of_in_port, << 0:16 >>},
+				  {nxm_of_eth_dst, << 0,1,2,3,4,5 >>},
+				  {nxm_of_eth_dst_w, {<< 0,1,2,3,4,5 >>, << 255,255,255,255,255,255 >>}},
+				  {nxm_of_eth_src, << 0,1,2,3,4,5 >>},
+				  {nxm_of_eth_type, << 0:16 >>},
+				  {nxm_of_vlan_tci, << 0:16 >>},
+				  {nxm_of_vlan_tci_w, {<< 0:16 >>, << 0:16 >>}},
+				  {nxm_of_ip_tos, << 0 >>},
+				  {nxm_of_ip_proto, << 0 >>},
+				  {nxm_of_ip_src, << 1,2,3,4 >>},
+				  {nxm_of_ip_src_w, {<< 1,2,3,4 >>, << 255,255,255,255 >>}},
+				  {nxm_of_ip_dst, << 5,6,7,8 >>},
+				  {nxm_of_ip_dst_w, {<<  5,6,7,8 >>, << 255,255,255,255 >>}},
+				  {nxm_of_tcp_src, << 0:16 >>},
+				  {nxm_of_tcp_dst, << 0:16 >>},
+				  {nxm_of_udp_src, << 0:16 >>},
+				  {nxm_of_udp_dst, << 0:16 >>},
+				  {nxm_of_icmp_type, << 0 >>},
+				  {nxm_of_icmp_code, << 0 >>},
+				  {nxm_of_arp_op, << 0:16 >>},
+				  {nxm_of_arp_spa, << 0:32 >>},
+				  {nxm_of_arp_spa_w, {<< 0:32 >>, << 255,255,255,255 >>}},
+				  {nxm_of_arp_tpa, << 0:32 >>},
+				  {nxm_of_arp_tpa_w, {<< 0:32 >>, << 255,255,255,255 >>}},
+				  {nxm_nx_tun_id, << 0,1,2,3,4,5,6,7 >>},
+				  {nxm_nx_tun_id_w, {<< 0,1,2,3,4,5,6,7 >>, << 255,255,255,255,255,255,255,255 >>}},
+				  {nxm_nx_arp_sha, << 0,1,2,3,4,5 >>},
+				  {nxm_nx_arp_tha, << 0,1,2,3,4,5 >>},
+				  {nxm_nx_ipv6_src, << 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 >>},
+				  {nxm_nx_ipv6_src_w, {<< 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 >>, << 255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255 >>}},
+				  {nxm_nx_ipv6_dst, << 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 >>},
+				  {nxm_nx_ipv6_dst_w, {<< 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 >>, << 255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255 >>}},
+				  {nxm_nx_icmpv6_type, << 0 >>},
+				  {nxm_nx_icmpv6_code, << 0 >>},
+				  {nxm_nx_nd_target, << 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 >>},
+				  {nxm_nx_nd_sll, << 0,1,2,3,4,5 >>},
+				  {nxm_nx_nd_tll, << 0,1,2,3,4,5 >>}],
+	Actions = [
+				#ofp_action_output{port = local, max_len = 123},
+				#ofp_action_vlan_vid{vlan_vid = 1},
+				#ofp_action_vlan_pcp{vlan_pcp = 2},
+				#ofp_action_strip_vlan{},
+				#ofp_action_dl_addr{type = src, dl_addr = <<0,1,2,3,4,5>>},
+				#ofp_action_dl_addr{type = dst, dl_addr = <<0,1,2,3,4,5>>},
+				#ofp_action_nw_addr{type = src, nw_addr = <<0,1,2,3>>},
+				#ofp_action_nw_addr{type = dst, nw_addr = <<0,1,2,3>>},
+				#ofp_action_nw_tos{nw_tos = 1},
+				#ofp_action_tp_port{type = src, tp_port = 22},
+				#ofp_action_tp_port{type = dst, tp_port = 22},
+				#ofp_action_enqueue{port = local, queue_id = 123},
+				#nx_action_resubmit{in_port = local},
+				#nx_action_set_tunnel{tun_id = 123},
+				#nx_action_set_tunnel64{tun_id = 456},
+				#nx_action_set_queue{queue_id = 789},
+				#nx_action_pop_queue{},
+				#nx_action_reg_move{n_bits = 32, src_ofs = 0, dst_ofs = 0, src = nxm_of_eth_dst, dst = nxm_of_eth_src},
+				#nx_action_reg_load{ofs = 0, nbits = 32, dst = nxm_of_eth_dst, value = << 0,1,2,3,4,5 >>},
+				#nx_action_note{note = <<"Note12">>}
+			   ],
+%%#nx_action_multipath{fields = Fields, basis = Basis, algorithm = Algo, max_link = MaxLink, arg = Arg, ofs = Ofs, nbits = Nbits, dst = Dst},
+%%#nx_action_autopath{ofs = Ofs, nbits = Nbits, dst = Dst, id = Id}
+
+	FlowMod = #nx_flow_mod{cookie = 123, command = add, idle_timeout = 60, hard_timeout = 300,
+						   priority = 1, buffer_id = 0, out_port = local, flags = [], nx_match = NxMatches, actions = Actions},
+	MOut = #ovs_msg{version = 1, type = vendor, xid = 1, msg = FlowMod},
+	Pkt = flower_packet:encode(MOut),
+	[MIn] = flower_packet:decode(Pkt),
+	MOut = MIn,
+	ok.
+
 all() -> 
 	[test_hello_request, test_echo_request, test_echo_reply,
 	 test_switch_features_request, test_switch_features_reply,
 	 test_set_config, test_flow_mod_add, test_flow_removed,
 	 test_packet_in, test_packet_out,
 	 test_port_status_cfg_down, test_port_status_lnk_down,
-	 test_port_status_lnk_up].
+	 test_port_status_lnk_up,
+	 test_nx_flow_mod].
 
 init_per_suite(Config) ->
 	Config.
