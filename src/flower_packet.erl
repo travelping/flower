@@ -100,7 +100,6 @@ eth_type(?ETH_TYPE_VLAN)  -> vlan;
 eth_type(?ETH_TYPE_IPV6)  -> ipv6;
 eth_type(?ETH_TYPE_LACP)  -> lacp;
 eth_type(?ETH_TYPE_LOOP)  -> loop;
-eth_type(X) when is_integer(X), X =< ?ETH_TYPE_MIN -> none;
 eth_type(X) when is_integer(X) -> X;
 													   
 eth_type(none)  -> ?ETH_TYPE_NONE;
@@ -319,6 +318,22 @@ not_impl() ->
 %%%===================================================================
 %%% Decode
 %%%===================================================================
+decode_nx_matches(<< Header:4/binary, Rest/binary>>, Acc) ->
+	H = nxm_header(Header),
+	<<_Vendor:16, _Field:7, Mult:1, Length:8>> = Header,
+	case Mult of
+		0 ->
+			<<Value:Length/binary, Next/binary>> = Rest,
+			decode_nx_matches(Next, [{H, Value}|Acc]);
+		1 ->
+			L = Length div 2,
+			<<Value:L/binary, Mask:L/binary, Next/binary>> = Rest,
+			decode_nx_matches(Next, [{H, {Value, Mask}}|Acc])
+	end;
+decode_nx_matches(_, Acc) ->
+	lists:reverse(Acc).
+decode_nx_matches(NxMatch) ->
+	 decode_nx_matches(NxMatch, []).
 
 decode_msg(features_reply, <<DataPathId:64/integer, NBuffers:32/integer, NTables:8/integer, _Pad:3/bytes,
 							 Capabilities:32/integer, Actions:32/integer, Ports/binary>>) ->
@@ -357,6 +372,25 @@ decode_msg(port_status, <<Reason:8/integer, _Pad:7/bytes, PhyPort/binary>>) ->
 				  #ofp_port_status{reason = ofp_port_reason(Reason),
 								   port = decode_phy_port(PhyPort)};
 
+decode_msg(vendor, << Vendor:32/integer, Cmd:32/integer, Data/binary >>) ->
+	decode_msg(of_vendor_ext({vendor(Vendor), Cmd}), Data);
+
+decode_msg(nxt_flow_mod_table_id, <<Set:8/integer>>) ->
+	#nxt_flow_mod_table_id{set = bool(Set)};
+
+decode_msg(nxt_role_request, <<Role:32/integer>>) ->
+	#nxt_role_request{role = nxt_role(Role)};
+
+decode_msg(nxt_flow_mod, <<Cookie:64/integer, Command:16/integer, IdleTimeout:16/integer, HardTimeout:16/integer,
+						   Priority:16/integer, BufferId:32/integer, OutPort:16/integer, Flags:16/integer,
+						   NxMatchLen:16/integer, 0:48, NxPayload/binary>>) ->
+	PadLen = pad_length(8, NxMatchLen),
+	<<NxMatch:NxMatchLen/bytes, _Pad:PadLen/bytes, Actions/binary>> = NxPayload,
+	#nx_flow_mod{cookie = Cookie, command = ofp_flow_mod_command(Command),
+				 idle_timeout = IdleTimeout, hard_timeout = HardTimeout,
+				 priority = Priority, buffer_id = BufferId,
+				 out_port = ofp_port(OutPort), flags = dec_flags(ofp_flow_mod_flags(), Flags), nx_match = decode_nx_matches(NxMatch), actions = decode_actions(Actions)};
+
 decode_msg(_, Msg) ->
 	Msg.
 
@@ -366,46 +400,76 @@ decode_ofp_match(<<Wildcards:32/integer, InPort:16/integer,
 				   _Pad1:1/bytes, 
 				   DlType:16/integer, NwTos:8/integer, NwProto:8/integer, _Pad2:2/bytes,
 				   NwSrc:4/bytes, NwDst:4/bytes, TpSrc:16/integer, TpDst:16/integer>>) ->
+	io:format("DlType: ~w, NwTos: ~w~n", [DlType, NwTos]),
 	#ofp_match{wildcards = Wildcards, in_port = ofp_port(InPort),
 			   dl_src = DlSrc, dl_dst = DlDst, dl_vlan = DlVlan, dl_vlan_pcp = DlVlanPcp, dl_type = eth_type(DlType),
 			   nw_tos = NwTos, nw_proto = protocol(NwProto), nw_src = NwSrc, nw_dst = NwDst,
 			   tp_src = TpSrc, tp_dst = TpDst}.
 
--spec decode_action(binary()) -> ofp_action().
-decode_action(<<0:16, 8:16, Port:16/integer, MaxLen:16/integer>>) ->
+decode_nx_action(nxast_resubmit, << InPort:16, _/binary >>) ->
+	#nx_action_resubmit{in_port = ofp_port(InPort)};
+decode_nx_action(nxast_set_tunnel, << 0:16, TunId:32 >>) ->
+	#nx_action_set_tunnel{tun_id = TunId};
+decode_nx_action(nxast_set_queue, << 0:16, QueueId:32 >>) ->
+	#nx_action_set_queue{queue_id = QueueId};
+decode_nx_action(nxast_pop_queue, << 0:48 >>) ->
+	#nx_action_pop_queue{};
+decode_nx_action(nxast_reg_move, << Nbits:16, SrcOfs:16, DstOfs:16, Src:4/binary, Dst:4/binary>>) ->
+	#nx_action_reg_move{n_bits = Nbits, src_ofs = SrcOfs, dst_ofs = DstOfs, src = nxm_header(Src), dst = nxm_header(Dst)};
+decode_nx_action(nxast_reg_load, << Ofs:10, Nbits:6, Dst:4/binary, RawValue/binary >>) ->
+	<<_:16, _:7, _:1, ValLen:8, _/binary>> = Dst,
+	<<Value:ValLen/binary, _/binary>> = RawValue,
+	#nx_action_reg_load{ofs = Ofs, nbits = Nbits, dst = nxm_header(Dst), value = Value};
+decode_nx_action(nxast_note, << Note/binary >>) ->
+	#nx_action_note{note = Note};
+decode_nx_action(nxast_set_tunnel64, << 0:48, TunId:64 >>) ->
+	#nx_action_set_tunnel64{tun_id = TunId}.
+%%#decode_nx_action(nxast_multipath) ->
+%%decode_nx_action(nxast_autopath) ->
+
+decode_vendor_action(nicira, <<Action:16, Msg/binary>>) ->
+	decode_nx_action(nxt_action(Action), Msg);
+decode_vendor_action(Vendor, Msg) ->
+	#ofp_action_vendor_header{vendor = Vendor, msg = Msg}.
+
+-spec decode_action(Type :: non_neg_integer(), Length :: non_neg_integer(), binary()) -> ofp_action().
+decode_action(0, 4, <<Port:16/integer, MaxLen:16/integer>>) ->
 	#ofp_action_output{port = ofp_port(Port), max_len = MaxLen};
-decode_action(<<1:16, 8:16, VlanVid:16/integer, _:16>>) ->
+decode_action(1, 4, <<VlanVid:16/integer, _:16>>) ->
 	#ofp_action_vlan_vid{vlan_vid = VlanVid};
-decode_action(<<2:16, 8:16, VlanPcp:8/integer, 0:24>>) ->
+decode_action(2, 4, <<VlanPcp:8/integer, 0:24>>) ->
 	#ofp_action_vlan_pcp{vlan_pcp = VlanPcp};
-decode_action(<<3:16, 8:16, _:32>>) ->
+decode_action(3, 4, <<_:32>>) ->
 	#ofp_action_strip_vlan{};
-decode_action(<<4:16, 16:16, Addr:6/binary, _:48>>) ->
+decode_action(4, 12, <<Addr:6/binary, _:48>>) ->
 	#ofp_action_dl_addr{type = src, dl_addr = Addr};
-decode_action(<<5:16, 16:16, Addr:6/binary, _:48>>) ->
+decode_action(5, 12, <<Addr:6/binary, _:48>>) ->
 	#ofp_action_dl_addr{type = dst, dl_addr = Addr};
-decode_action(<<6:16, 8:8, Addr:4/binary>>) ->
+decode_action(6, 4, <<Addr:4/binary>>) ->
 	#ofp_action_nw_addr{type = src, nw_addr = Addr};
-decode_action(<<7:16, 8:8, Addr:4/binary>>) ->
+decode_action(7, 4, <<Addr:4/binary>>) ->
 	#ofp_action_nw_addr{type = dst, nw_addr = Addr};
-decode_action(<<9:16, 8:8, NwTos:8/integer, _:24>>) ->
+decode_action(8, 4, <<NwTos:8/integer, _:24>>) ->
 	#ofp_action_nw_tos{nw_tos = NwTos};
-decode_action(<<9:16, 8:8, TpPort:16/integer, _:16>>) ->
+decode_action(9, 4, <<TpPort:16/integer, _:16>>) ->
 	#ofp_action_tp_port{type = src, tp_port = TpPort};
-decode_action(<<10:16, 8:8, TpPort:16/integer, _:16>>) ->
+decode_action(10, 4, <<TpPort:16/integer, _:16>>) ->
 	#ofp_action_tp_port{type = dst, tp_port = TpPort};
-decode_action(<<11:16, 16:16, Port:16/integer, _:48, QueueId:32/integer>>) ->
+decode_action(11, 12, <<Port:16/integer, _:48, QueueId:32/integer>>) ->
 	#ofp_action_enqueue{port = ofp_port(Port), queue_id = QueueId};
-decode_action(<<16#FFFF:16, _Length:16, Vendor:32, Msg>>) ->
-	#ofp_action_vendor_header{vendor = Vendor, msg = Msg};
-decode_action(Msg) when is_binary(Msg) ->
-	Msg.
+decode_action(16#FFFF, Length, <<Vendor:32, Msg/binary>> = PayLoad)
+	when Length == size(PayLoad) ->
+	decode_vendor_action(vendor(Vendor), Msg);
+decode_action(Type, Length, Msg)
+	when Length == size(Msg) ->
+	{Type, Msg}.
 
 decode_actions(<<>>, Acc) ->
 	lists:reverse(Acc);
-decode_actions(<<_Type:16/integer, Length:16/integer, _Rest/binary>> = Data, Acc) ->
-	<<Msg:Length/bytes, Rest/binary>> = Data,
-	decode_actions(Rest, [decode_action(Msg)|Acc]).
+decode_actions(<<Type:16/integer, Length:16/integer, Rest/binary>>, Acc) ->
+	Len = Length - 4,
+	<<Msg:Len/bytes, Next/binary>> = Rest,
+	decode_actions(Next, [decode_action(Type, Len, Msg)|Acc]).
 
 decode_actions(Msg) ->
 	decode_actions(Msg, []).
@@ -446,7 +510,7 @@ encode_ovs_vendor({Vendor, Cmd}, Data)
   when is_atom(Vendor) ->
 	encode_ovs_vendor({vendor(Vendor), Cmd}, Data);
 encode_ovs_vendor({Vendor, Cmd}, Data) ->
-	<< Vendor:8, Cmd:8, Data/binary >>;
+	<< Vendor:32, Cmd:32, Data/binary >>;
 encode_ovs_vendor(Cmd, Data) ->
 	encode_ovs_vendor(of_vendor_ext(Cmd), Data).
 
@@ -537,44 +601,48 @@ encode_ofp_match(Wildcards, InPort, DlSrc, DlDst, DlVlan, DlVlanPcp, DlType,
 	<<Wildcards:32, InPort0:16, DlSrc:6/binary, DlDst:6/binary, DlVlan:16, DlVlanPcp:8,
 	  0:8, DlType0:16, NwTos:8, NwProto0:8, 0:16, NwSrc0:4/binary, NwDst0:4/binary, TpSrc0:16, TpDst0:16>>.
 
+encode_ofs_action(Type, Data) ->
+	Len = 4 + size(Data),
+	<<Type:16, Len:16, Data/binary>>.
+	
 encode_ofs_action_output(Port, MaxLen) ->
 	Port0 = ofp_port(Port),
-	<<0:16, 8:16, Port0:16, MaxLen:16>>.
+	encode_ofs_action(0, <<Port0:16, MaxLen:16>>).
 
 encode_ofs_action_vlan_vid(VlanVid) ->
-	<<1:16, 8:16, VlanVid:16, 0:16>>.
+	encode_ofs_action(1, <<VlanVid:16, 0:16>>).
 
 encode_ofs_action_vlan_pcp(VlanPcp) ->
-	<<2:16, 8:16, VlanPcp:8, 0:24>>.
+	encode_ofs_action(2, <<VlanPcp:8, 0:24>>).
 
 encode_ofs_action_strip_vlan() ->
-	<<3:16, 8:16, 0:32>>.
+	encode_ofs_action(3, <<0:32>>).
 
 encode_ofs_action_dl_addr(src, Addr) ->
-	<<4:16, 16:16, Addr:6/binary, 0:48>>;
+	encode_ofs_action(4, <<Addr:6/bytes, 0:48>>);
 encode_ofs_action_dl_addr(dst, Addr) ->
-	<<5:16, 16:16, Addr:6/binary, 0:48>>.
+	encode_ofs_action(5, <<Addr:6/bytes, 0:48>>).
 
 encode_ofs_action_nw_addr(src, Addr) ->
-	<<6:16, 8:8, Addr:4/binary>>;
+	encode_ofs_action(6, <<Addr:4/bytes>>);
 encode_ofs_action_nw_addr(dst, Addr) ->
-	<<7:16, 8:8, Addr:4/binary>>.
+	encode_ofs_action(7, <<Addr:4/bytes>>).
 
 encode_ofs_action_nw_tos(NwTos) ->
-	<<9:16, 8:8, NwTos:8, 0:24>>.
+	encode_ofs_action(8, <<NwTos:8, 0:24>>).
 
 encode_ofs_action_tp_addr(src, TpPort) ->
-	<<9:16, 8:8, TpPort:16, 0:16>>;
+	encode_ofs_action(9, <<TpPort:16, 0:16>>);
 encode_ofs_action_tp_addr(dst, TpPort) ->
-	<<10:16, 8:8, TpPort:16, 0:16>>.
+	encode_ofs_action(10, <<TpPort:16, 0:16>>).
 
 encode_ofs_action_enqueue(Port, QueueId) ->
 	Port0 = ofp_port(Port),
-	<<11:16, 16:16, Port0:16, 0:48, QueueId:32>>.
+	encode_ofs_action(11, <<Port0:16, 0:48, QueueId:32>>).
 
 encode_ofs_action_vendor(Vendor, Msg) ->
 	Data = pad_to(8, Msg),
-	pad_to(8, <<16#FFFF:16, (size(Data) + 8):16, Vendor:32, Data/binary>>).
+	encode_ofs_action(16#FFFF, <<Vendor:32, Data/binary>>).
 
 -spec encode_ofp_flow_mod(binary(), integer(), integer(), integer(), integer(), integer(), integer(), integer()|atom(), integer(), binary()|list(binary)) -> binary().
 encode_ofp_flow_mod(Match, Cookie, Command, IdleTimeout, HardTimeout, Priority,
@@ -621,12 +689,11 @@ encode_nxt_role_request(Role) ->
 				   (Header :: binary(), Value :: binary()) -> binary().
 enc_nxm_match(<<_Vendor:16, _Field:7, 1:1, Length:8>> = Header, {Value, Mask})
   when is_binary(Value), is_binary(Mask) ->
-	BitLen = Length * 4,
-	<<Header/binary, Value:BitLen/binary, Mask:BitLen/binary>>;
+	Len = Length div 2,
+	<<Header/binary, Value:Len/bytes, Mask:Len/bytes>>;
 enc_nxm_match(<<_Vendor:16, _Field:7, 0:1, Length:8>> = Header, Value)
   when is_binary(Value) ->
-	BitLen = Length * 8,
-	<<Header/binary, Value:BitLen/binary>>.
+	<<Header/binary, Value:Length/bytes>>.
 	
 encode_nx_matches([], Acc) ->
 	list_to_binary(lists:reverse(Acc));
@@ -744,6 +811,49 @@ nxm_header(nxm_nx_nd_tll)		-> ?NXM_NX_ND_TLL;
 nxm_header({nxm_nx_reg, X})		-> ?NXM_HEADER  (16#0001, X, 4);
 nxm_header({nxm_nx_reg_w, X})	-> ?NXM_HEADER_W(16#0001, X, 4);
 
+nxm_header(?NXM_OF_IN_PORT)     -> nxm_of_in_port;
+nxm_header(?NXM_OF_ETH_DST)     -> nxm_of_eth_dst;
+nxm_header(?NXM_OF_ETH_DST_W)   -> nxm_of_eth_dst_w;
+nxm_header(?NXM_OF_ETH_SRC)     -> nxm_of_eth_src;
+nxm_header(?NXM_OF_ETH_TYPE)    -> nxm_of_eth_type;
+nxm_header(?NXM_OF_VLAN_TCI)    -> nxm_of_vlan_tci;
+nxm_header(?NXM_OF_VLAN_TCI_W)  -> nxm_of_vlan_tci_w;
+nxm_header(?NXM_OF_IP_TOS)      -> nxm_of_ip_tos;
+nxm_header(?NXM_OF_IP_PROTO)    -> nxm_of_ip_proto;
+nxm_header(?NXM_OF_IP_SRC)      -> nxm_of_ip_src;
+nxm_header(?NXM_OF_IP_SRC_W)    -> nxm_of_ip_src_w;
+nxm_header(?NXM_OF_IP_DST    )  -> nxm_of_ip_dst;
+nxm_header(?NXM_OF_IP_DST_W)    -> nxm_of_ip_dst_w;
+nxm_header(?NXM_OF_TCP_SRC    ) -> nxm_of_tcp_src;
+nxm_header(?NXM_OF_TCP_DST)     -> nxm_of_tcp_dst;
+nxm_header(?NXM_OF_UDP_SRC)     -> nxm_of_udp_src;
+nxm_header(?NXM_OF_UDP_DST)     -> nxm_of_udp_dst;
+nxm_header(?NXM_OF_ICMP_TYPE)   -> nxm_of_icmp_type;
+nxm_header(?NXM_OF_ICMP_CODE)   -> nxm_of_icmp_code;
+nxm_header(?NXM_OF_ARP_OP)      -> nxm_of_arp_op;
+nxm_header(?NXM_OF_ARP_SPA)     -> nxm_of_arp_spa;
+nxm_header(?NXM_OF_ARP_SPA_W)   -> nxm_of_arp_spa_w;
+nxm_header(?NXM_OF_ARP_TPA)     -> nxm_of_arp_tpa;
+nxm_header(?NXM_OF_ARP_TPA_W)   -> nxm_of_arp_tpa_w;
+
+nxm_header(?NXM_NX_TUN_ID)      -> nxm_nx_tun_id;
+nxm_header(?NXM_NX_TUN_ID_W)    -> nxm_nx_tun_id_w;
+nxm_header(?NXM_NX_ARP_SHA)     -> nxm_nx_arp_sha;
+nxm_header(?NXM_NX_ARP_THA)     -> nxm_nx_arp_tha;
+
+nxm_header(?NXM_NX_IPV6_SRC)    -> nxm_nx_ipv6_src;
+nxm_header(?NXM_NX_IPV6_SRC_W)  -> nxm_nx_ipv6_src_w;
+nxm_header(?NXM_NX_IPV6_DST)    -> nxm_nx_ipv6_dst;
+nxm_header(?NXM_NX_IPV6_DST_W)  -> nxm_nx_ipv6_dst_w;
+nxm_header(?NXM_NX_ICMPV6_TYPE) -> nxm_nx_icmpv6_type;
+nxm_header(?NXM_NX_ICMPV6_CODE) -> nxm_nx_icmpv6_code;
+nxm_header(?NXM_NX_ND_TARGET)   -> nxm_nx_nd_target;
+nxm_header(?NXM_NX_ND_SLL)      -> nxm_nx_nd_sll;
+nxm_header(?NXM_NX_ND_TLL)      -> nxm_nx_nd_tll;
+
+nxm_header(?NXM_HEADER  (16#0001, X, 4)) -> {nxm_nx_reg, X};
+nxm_header(?NXM_HEADER_W(16#0001, X, 4)) -> {nxm_nx_reg_w, X};
+
 nxm_header(X) when is_binary(X) -> X.
 
 -spec encode_nx_action(Action :: nxt_action(), Data :: binary()) -> binary().
@@ -753,7 +863,8 @@ encode_nx_action(Action, Data) ->
 
 -spec encode_nx_action_resubmit(InPort :: non_neg_integer()) -> binary().
 encode_nx_action_resubmit(InPort) ->
-	encode_nx_action(nxast_resubmit, << InPort:16 >>).
+	InPort0 = ofp_port(InPort),
+	encode_nx_action(nxast_resubmit, << InPort0:16 >>).
 
 -spec encode_nx_action_set_tunnel(TunId :: non_neg_integer()) -> binary().
 encode_nx_action_set_tunnel(TunId) ->
@@ -769,7 +880,7 @@ encode_nx_action_set_queue(QueueId) ->
 
 -spec encode_nx_action_pop_queue() -> binary().
 encode_nx_action_pop_queue() ->
- 	encode_nx_action(nxast_pop_queue, << >>).
+ 	encode_nx_action(nxast_pop_queue, << 0:48 >>).
 
 -spec encode_nx_action_reg_move(Nbits :: non_neg_integer(),
 								SrcOfs :: non_neg_integer(),
@@ -899,7 +1010,7 @@ encode_msg(#ofp_flow_mod{match = Match, cookie = Cookie, command = Command,
 						 idle_timeout = IdleTimeout, hard_timeout = HardTimeout,
 						 priority = Priority, buffer_id = BufferId,
 						 out_port = OutPort, flags = Flags, actions = Actions}) ->
-	encode_ofp_flow_mod(encode_msg(Match), Cookie, ofp_flow_mod_command(Command), 
+	encode_ofp_flow_mod(encode_msg(Match), Cookie, Command, 
 						IdleTimeout, HardTimeout, Priority,	BufferId, OutPort,
 						enc_flags(ofp_flow_mod_flags(), Flags), encode_actions(Actions));
 
@@ -922,7 +1033,7 @@ encode_msg(#nx_flow_mod{cookie = Cookie, command = Command,
 						idle_timeout = IdleTimeout, hard_timeout = HardTimeout,
 						priority = Priority, buffer_id = BufferId,
 						out_port = OutPort, flags = Flags, nx_match = NxMatch, actions = Actions}) ->
-	encode_nx_flow_mod(Cookie, ofp_flow_mod_command(Command), IdleTimeout, HardTimeout, Priority,
+	encode_nx_flow_mod(Cookie, Command, IdleTimeout, HardTimeout, Priority,
 					   BufferId, OutPort, enc_flags(ofp_flow_mod_flags(), Flags), 
 					   encode_nx_matches(NxMatch), encode_actions(Actions));
 
