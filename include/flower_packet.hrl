@@ -7,7 +7,7 @@
 %%% Created : 28 Jun 2011 by Andreas Schultz <aschultz@tpip.net>
 %%%-------------------------------------------------------------------
 
--type flags() :: list(atom()).
+-type ofp_flags() :: list(atom()).
 -type ofp_port() :: 'in_port' | 'table' | 'normal' | 'flood' | 'all' | 'controller' | 'local' | 'none' | non_neg_integer().
 -type ofp_command() :: 'hello' | 'error' | 'echo_request' | 'echo_reply' | 'vendor' | 'features_request' | 'features_reply' |
 					   'get_config_request' | 'get_config_reply' | 'set_config' | 'packet_in' | 'flow_removed' | 'port_status' |
@@ -164,7 +164,7 @@
 		  priority                   :: non_neg_integer(),
 		  buffer_id                  :: non_neg_integer(),
 		  out_port                   :: ofp_port(),
-		  flags                      :: flags(),
+		  flags                      :: ofp_flags(),
 		  actions                    :: ofp_actions()
 		 }).
 
