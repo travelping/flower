@@ -57,11 +57,11 @@ init([]) ->
 
 handle_call({register, Event}, {Pid, _Ref} = _From, #state{events = Events} = State) ->
 	case orddict:is_key(Event, Events) of
-		true ->
+		false ->
 			link(Pid),
 			Events1 = orddict:store(Event, Pid, Events),
 			{reply, ok, State#state{events = Events1}};
-		false ->
+		true ->
 			{reply, {error, duplicate}, State}
 	end;
 
