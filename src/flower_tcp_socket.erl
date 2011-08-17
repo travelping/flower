@@ -2,7 +2,8 @@
 -behaviour(gen_listener_tcp).
 
 -define(TCP_PORT, 6633).
--define(TCP_OPTS, [binary, inet6,
+-define(TCP_OPTS, [binary, inet,
+                   {ip,           {127,0,0,1}},
                    {active,       false},
 				   {send_timeout, 5000},
                    {backlog,      10},
