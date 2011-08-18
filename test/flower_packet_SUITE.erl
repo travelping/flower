@@ -11,6 +11,7 @@
 -compile(export_all).
 
 -include("../include/flower_packet.hrl").
+-include("../include/flower_flow.hrl").
 -include_lib("common_test/include/ct.hrl").
 
 ofp_switch_features_reply() ->
@@ -149,6 +150,21 @@ test_set_config(_Config) ->
 	Sw = flower_packet:encode(flower_packet:decode(Sw)),
 	ok.
 
+test_flow_mod(_Config) ->
+	IP = <<127,0,0,1>>,
+	Flow = #flow{dl_type = ip, nw_src = IP, nw_dst = IP},
+	ActionsBin = <<>>,
+	MatchSrc = flower_packet:encode_msg(flower_match:encode_ofp_matchflow([{nw_src_mask,32}, dl_type], Flow)),
+	PktSrc = flower_packet:encode_ofp_flow_mod(MatchSrc, 0, delete, 0, 0, 0, -1, none, 1, ActionsBin),
+	OutSrc = flower_packet:encode(#ovs_msg{version = 1, type = flow_mod, xid = 20, msg = PktSrc}),
+	flower_packet:decode(OutSrc),
+
+	MatchDst = flower_packet:encode_msg(flower_match:encode_ofp_matchflow([{nw_dst_mask,32}, dl_type], Flow)),
+	PktDst = flower_packet:encode_ofp_flow_mod(MatchDst, 0, delete, 0, 0, 0, -1, none, 1, ActionsBin),
+	OutDst = flower_packet:encode(#ovs_msg{version = 1, type = flow_mod, xid = 20, msg = PktDst}),
+	flower_packet:decode(OutDst).
+
+
 test_nx_flow_mod(_Config) ->
 	NxMatches = [
 				  {nxm_of_in_port, << 0:16 >>},
@@ -228,6 +244,7 @@ all() ->
 	 test_packet_in, test_packet_out,
 	 test_port_status_cfg_down, test_port_status_lnk_down,
 	 test_port_status_lnk_up,
+	 test_flow_mod,
 	 test_nx_flow_mod].
 
 init_per_suite(Config) ->
