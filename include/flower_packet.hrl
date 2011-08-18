@@ -56,6 +56,11 @@
 		  msg                :: term()
 		 }).
 
+-record(ofp_error, {
+		  error,
+		  data
+		 }).
+
 -record(ofp_switch_features, {
 		  datapath_id,
 		  n_buffers,

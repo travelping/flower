@@ -160,6 +160,98 @@ ofpt(queue_get_config_reply)	-> 21;
 
 ofpt(_)		-> error.
 
+ofp_error_type(0) -> hello_failed;
+ofp_error_type(1) -> bad_request;
+ofp_error_type(2) -> bad_action;
+ofp_error_type(3) -> flow_mod_failed;
+ofp_error_type(4) -> port_mod_failed;
+ofp_error_type(5) -> queue_op_failed;
+
+ofp_error_type(hello_failed)    -> 0;
+ofp_error_type(bad_request)     -> 1;
+ofp_error_type(bad_action)      -> 2;
+ofp_error_type(flow_mod_failed) -> 3;
+ofp_error_type(port_mod_failed) -> 4;
+ofp_error_type(queue_op_failed) -> 5;
+
+ofp_error_type(_) -> error.
+
+ofp_error_code_type(hello_failed, 0) -> incompatible;
+ofp_error_code_type(hello_failed, 1) -> eperm;
+
+ofp_error_code_type(bad_request, 0) -> bad_version;
+ofp_error_code_type(bad_request, 1) -> bad_type;
+ofp_error_code_type(bad_request, 2) -> bad_stat;
+ofp_error_code_type(bad_request, 3) -> bad_vendor;
+ofp_error_code_type(bad_request, 4) -> bad_subtype;
+ofp_error_code_type(bad_request, 5) -> eperm;
+ofp_error_code_type(bad_request, 6) -> bad_len;
+ofp_error_code_type(bad_request, 7) -> buffer_empty;
+ofp_error_code_type(bad_request, 8) -> buffer_unknown;
+
+ofp_error_code_type(bad_action, 0) -> bad_type;
+ofp_error_code_type(bad_action, 1) -> bad_len;
+ofp_error_code_type(bad_action, 2) -> bad_vendor;
+ofp_error_code_type(bad_action, 3) -> bad_vendor_type;
+ofp_error_code_type(bad_action, 4) -> bad_out_port;
+ofp_error_code_type(bad_action, 5) -> bad_argument;
+ofp_error_code_type(bad_action, 6) -> eperm;
+ofp_error_code_type(bad_action, 7) -> too_many;
+ofp_error_code_type(bad_action, 8) -> bad_queue;
+
+ofp_error_code_type(flow_mod_failed, 0) -> all_tables_full;
+ofp_error_code_type(flow_mod_failed, 1) -> overlap;
+ofp_error_code_type(flow_mod_failed, 2) -> eperm;
+ofp_error_code_type(flow_mod_failed, 3) -> bad_emerg_timeout ;
+ofp_error_code_type(flow_mod_failed, 4) -> bad_command;
+ofp_error_code_type(flow_mod_failed, 5) -> unsupported;
+
+ofp_error_code_type(port_mod_failed, 0) -> bad_port;
+ofp_error_code_type(port_mod_failed, 1) -> bad_hw_addr;
+
+ofp_error_code_type(queue_op_failed, 0) -> bad_port;
+ofp_error_code_type(queue_op_failed, 1) -> bad_queue;
+ofp_error_code_type(queue_op_failed, 2) -> eperm;
+
+ofp_error_code_type(hello_failed, incompatible)	-> 0;
+ofp_error_code_type(hello_failed, eperm)			-> 1;
+
+ofp_error_code_type(bad_request, bad_version)		-> 0;
+ofp_error_code_type(bad_request, bad_type)		-> 1;
+ofp_error_code_type(bad_request, bad_stat)		-> 2;
+ofp_error_code_type(bad_request, bad_vendor)		-> 3;
+ofp_error_code_type(bad_request, bad_subtype)		-> 4;
+ofp_error_code_type(bad_request, eperm)			-> 5;
+ofp_error_code_type(bad_request, bad_len)			-> 6;
+ofp_error_code_type(bad_request, buffer_empty)	-> 7;
+ofp_error_code_type(bad_request, buffer_unknown)	-> 8;
+
+ofp_error_code_type(bad_action, bad_type)			-> 0;
+ofp_error_code_type(bad_action, bad_len)			-> 1;
+ofp_error_code_type(bad_action, bad_vendor)		-> 2;
+ofp_error_code_type(bad_action, bad_vendor_type)	-> 3;
+ofp_error_code_type(bad_action, bad_out_port)		-> 4;
+ofp_error_code_type(bad_action, bad_argument)		-> 5;
+ofp_error_code_type(bad_action, eperm)			-> 6;
+ofp_error_code_type(bad_action, too_many)			-> 7;
+ofp_error_code_type(bad_action, bad_queue)		-> 8;
+
+ofp_error_code_type(flow_mod_failed, all_tables_full)		-> 0;
+ofp_error_code_type(flow_mod_failed, overlap)				-> 1;
+ofp_error_code_type(flow_mod_failed, eperm)				-> 2;
+ofp_error_code_type(flow_mod_failed, bad_emerg_timeout )	-> 3;
+ofp_error_code_type(flow_mod_failed, bad_command)			-> 4;
+ofp_error_code_type(flow_mod_failed, unsupported)			-> 5;
+
+ofp_error_code_type(port_mod_failed, bad_port)	-> 0;
+ofp_error_code_type(port_mod_failed, bad_hw_addr)	-> 1;
+
+ofp_error_code_type(queue_op_failed, bad_port)	-> 0;
+ofp_error_code_type(queue_op_failed, bad_queue)	-> 1;
+ofp_error_code_type(queue_op_failed, eperm)		-> 2;
+
+ofp_error_code_type(_, _) -> error.
+
 ofp_capabilities() ->
 	[flow_stats, table_stats, port_stats, stp, reserved, ip_reasm, queue_stats, arp_match_ip].
 
@@ -374,6 +466,12 @@ decode_msg(port_status, <<Reason:8/integer, _Pad:7/bytes, PhyPort/binary>>) ->
 
 decode_msg(vendor, << Vendor:32/integer, Cmd:32/integer, Data/binary >>) ->
 	decode_msg(of_vendor_ext({vendor(Vendor), Cmd}), Data);
+
+decode_msg(error, << Type:16/integer, Code:16/integer, Data/binary >>) ->
+	Type1 = ofp_error_type(Type),
+	Code1 = ofp_error_code_type(Type1, Code),
+	Error = {Type1, Code1},
+	#ofp_error{error = Error, data = Data};
 
 decode_msg(nxt_flow_mod_table_id, <<Set:8/integer>>) ->
 	#nxt_flow_mod_table_id{set = bool(Set)};
