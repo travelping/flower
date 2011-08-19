@@ -33,7 +33,7 @@ start_link() ->
 	gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 delete(Event) ->
-	gen_server:call(?SERVER, {unregister, Event}).
+	gen_server:call(?SERVER, {delete, Event}).
 
 join(Event) ->
 	gen_server:call(?SERVER, {join, Event}).
@@ -72,7 +72,7 @@ handle_call({leave, Event}, {Pid, _Ref} = _From, State) ->
 	{reply, Reply, State}.
 
 handle_cast(terminate, State) ->
-	{stop, requested, State}.
+	{stop, normal, State}.
 
 handle_info({'EXIT', Pid, _Reason}, State) ->
 	ets:match_delete(?SERVER, {'_', Pid}),

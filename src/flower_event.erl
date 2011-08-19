@@ -83,7 +83,7 @@ handle_cast({terminate, Event}, #state{events = Events} = State) ->
 	{noreply, State};
 
 handle_cast(terminate, State) ->
-	{stop, request, State}.
+	{stop, normal, State}.
 
 handle_info({'EXIT', Pid, _Reason}, #state{events = Events} = State) ->
 	Events1 = orddict:filter(fun(Key, Value) when Value == Pid -> flower_dispatcher:delete(Key), false;
