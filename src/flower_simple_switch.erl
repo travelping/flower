@@ -167,10 +167,10 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 format_mac(<<A:8,B:8,C:8,D:8,E:8,F>>) ->
-	io_lib:format("~2.16.0B:~2.16.0B:~2.16.0B:~2.16.0B:~2.16.0B:~2.16.0B", [A,B,C,D,E,F]).
+	lists:flatten(io_lib:format("~2.16.0B:~2.16.0B:~2.16.0B:~2.16.0B:~2.16.0B:~2.16.0B", [A,B,C,D,E,F])).
 
 format_ip(<<A:8,B:8,C:8,D:8>>) ->
-	io_lib:format("~B.~B.~B.~B", [A,B,C,D]).
+	lists:flatten(io_lib:format("~B.~B.~B.~B", [A,B,C,D])).
 
 choose_destination(#flow{in_port = Port, dl_src = DlSrc, dl_dst = DlDst} = _Flow) ->
 	OutPort = case flower_mac_learning:eth_addr_is_reserved(DlSrc) of
