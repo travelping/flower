@@ -178,7 +178,7 @@ choose_destination(#flow{in_port = Port, dl_src = DlSrc, dl_dst = DlDst} = _Flow
 						   find_out_port(DlDst, 0, Port);
 				  true -> none
 			  end,
-	io:format("Verdict: ~p~n", [OutPort]),
+	?DEBUG("Verdict: ~p", [OutPort]),
 	OutPort.
 
 learn_mac(DlSrc, VLan, Port) ->		 
@@ -189,7 +189,7 @@ learn_mac(DlSrc, VLan, Port) ->
 		end,
 	if
 		R =:= new; R =:= updated ->
-            io:format("~p: learned that ~s is on port ~w~n", [self(), format_mac(DlSrc), Port]),
+            ?DEBUG("~p: learned that ~s is on port ~w", [self(), format_mac(DlSrc), Port]),
 			ok;
 		true ->
 			ok

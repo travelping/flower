@@ -242,7 +242,7 @@ connected({send, Type, Xid, Msg}, State) ->
 	send_pkt(Type, Xid, Msg, {next_state, connected, State});
 
 connected(Msg, State) ->
-	io:format("unhandled message: ~w~n", [Msg]),
+	?DEBUG("unhandled message: ~w", [Msg]),
 	{next_state, connected, State}.
 	
 %%--------------------------------------------------------------------

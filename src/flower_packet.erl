@@ -427,7 +427,7 @@ decode_nx_matches(_, Acc) ->
 decode_nx_matches(NxMatch) ->
 	 decode_nx_matches(NxMatch, []).
 
-decode_msg(features_reply, <<DataPathId:64/integer, NBuffers:32/integer, NTables:8/integer, _Pad:3/bytes,
+decode_msg(features_reply, <<DataPathId:64/integer, NBuffers:32/integer, NTables:8/integer, Pad:3/bytes,
 							 Capabilities:32/integer, Actions:32/integer, Ports/binary>>) ->
 	?DEBUG("DataPathId: ~p, NBuffers: ~p, NTables: ~p, Pad: ~p, Capabilities: ~p, Actions: ~p, Ports: ~p~n",
 		   [DataPathId, NBuffers, NTables, Pad, Capabilities, Actions, Ports]),
@@ -498,7 +498,7 @@ decode_ofp_match(<<Wildcards:32/integer, InPort:16/integer,
 				   _Pad1:1/bytes, 
 				   DlType:16/integer, NwTos:8/integer, NwProto:8/integer, _Pad2:2/bytes,
 				   NwSrc:4/bytes, NwDst:4/bytes, TpSrc:16/integer, TpDst:16/integer>>) ->
-	io:format("DlType: ~w, NwTos: ~w~n", [DlType, NwTos]),
+	?DEBUG("DlType: ~w, NwTos: ~w", [DlType, NwTos]),
 	#ofp_match{wildcards = Wildcards, in_port = ofp_port(InPort),
 			   dl_src = DlSrc, dl_dst = DlDst, dl_vlan = DlVlan, dl_vlan_pcp = DlVlanPcp, dl_type = eth_type(DlType),
 			   nw_tos = NwTos, nw_proto = protocol(NwProto), nw_src = NwSrc, nw_dst = NwDst,

@@ -7,7 +7,8 @@
                   kernel,
                   stdlib,
                   sasl,
-                  gen_listener_tcp
+                  gen_listener_tcp,
+                  sasl_syslog_dm
                  ]},
   {mod, { flower_app, []}},
   {env, []}

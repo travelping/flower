@@ -19,6 +19,7 @@
 -export([init/1, handle_accept/2, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 %%-record(state, {}).
+-include("flower_debug.hrl").
 
 %% ====================================================================
 %% External functions
@@ -54,7 +55,7 @@ handle_info(_Info, State) ->
     {noreply, State}.
 
 terminate(Reason, _State) ->
-	io:format("flower_tcp_socket terminate on ~p~n", [Reason]),
+	?DEBUG("flower_tcp_socket terminate on ~p", [Reason]),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
