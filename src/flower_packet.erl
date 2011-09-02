@@ -9,7 +9,7 @@
 -module(flower_packet).
 
 %% API
--export([encode/1, encode_msg/1, decode/1]).
+-export([encode/1, encode_msg/1, encode_match/1, decode/1]).
 %% constant mappers
 -export([ofpt/1, ofp_packet_in_reason/1, ofp_config_flags/1,
 		 ofp_flow_mod_command/1, ofp_port/1, eth_type/1]).
@@ -328,6 +328,16 @@ ofp_port(controller) -> 16#fffd;
 ofp_port(local)      -> 16#fffe;
 ofp_port(none)       -> 16#ffff.
 
+ofp_table(16#fe) -> emergency; 
+ofp_table(16#ff) -> all;
+ofp_table(X) when is_integer(X) -> X;
+ofp_table(emergency) -> 16#fe;
+ofp_table(all)       -> 16#ff.
+
+ofp_queue(16#ffff) -> all;
+ofp_queue(X) when is_integer(X) -> X;
+ofp_queue(all)      -> 16#ffff.
+
 ofp_flow_removed_reason(0) -> idle_timeout;
 ofp_flow_removed_reason(1) -> hard_timeout;
 ofp_flow_removed_reason(2) -> delete;
@@ -344,6 +354,22 @@ ofp_port_reason(X) when is_integer(X) -> X;
 ofp_port_reason(add)    -> 0;
 ofp_port_reason(delete) -> 1;
 ofp_port_reason(modify) -> 2.
+
+ofp_stats_type(0)		-> desc;
+ofp_stats_type(1)		-> flow;
+ofp_stats_type(2)		-> aggregate;
+ofp_stats_type(3)		-> table;
+ofp_stats_type(4)		-> port;
+ofp_stats_type(5)		-> queue;
+ofp_stats_type(16#ffff)	-> vendor;
+ofp_stats_type(X) when is_integer(X) -> X;
+ofp_stats_type(desc)		-> 0;
+ofp_stats_type(flow)		-> 1;
+ofp_stats_type(aggregate)	-> 2;
+ofp_stats_type(table)		-> 3;
+ofp_stats_type(port)		-> 4;
+ofp_stats_type(queue)		-> 5;
+ofp_stats_type(vendor)		-> 16#ffff.
 
 -spec of_vendor_ext(of_vendor_ext()) -> {atom(), non_neg_integer()};
 				   ({atom(), non_neg_integer()}) -> of_vendor_ext().
@@ -463,6 +489,12 @@ decode_msg(flow_removed, <<Match:40/bytes, Cookie:64/integer, Priority:16/intege
 decode_msg(port_status, <<Reason:8/integer, _Pad:7/bytes, PhyPort/binary>>) ->
 				  #ofp_port_status{reason = ofp_port_reason(Reason),
 								   port = decode_phy_port(PhyPort)};
+
+decode_msg(stats_request, <<Type:16/integer, _Flags:16/integer, Msg/binary>>) ->
+	decode_stats_request(ofp_stats_type(Type), Msg);
+
+decode_msg(stats_reply, <<Type:16/integer, _Flags:16/integer, Msg/binary>>) ->
+	decode_stats_reply(ofp_stats_type(Type), [], Msg);
 
 decode_msg(vendor, << Vendor:32/integer, Cmd:32/integer, Data/binary >>) ->
 	decode_msg(of_vendor_ext({vendor(Vendor), Cmd}), Data);
@@ -598,6 +630,77 @@ decode_binstring(Str) ->
 	[Name|_Rest] = binary:split(Str, <<0>>),
 	Name.
 
+%% Stats Reques/Reply
+
+decode_stats_request(desc, <<>>) ->
+	#ofp_desc_stats_request{};
+
+decode_stats_request(flow, <<Match:40/bytes, TableId:8/integer, _Pad:1/binary, OutPort:16/integer>>) ->
+	#ofp_flow_stats_request{match = decode_ofp_match(Match), table_id = ofp_table(TableId), out_port = ofp_port(OutPort)};
+
+decode_stats_request(aggregate, <<Match:40/bytes, TableId:8/integer, _Pad:1/binary, OutPort:16/integer>>) ->
+	#ofp_aggregate_stats_request{match = decode_ofp_match(Match), table_id = ofp_table(TableId), out_port = ofp_port(OutPort)};
+
+decode_stats_request(table, <<>>) ->
+	#ofp_table_stats_request{};
+
+decode_stats_request(port, <<Port:16/integer, _Pad:6/bytes>>) ->
+	#ofp_port_stats_request{port_no = ofp_port(Port)};
+
+decode_stats_request(queue, <<Port:16/integer, _Pad:2/bytes, Queue:32/integer>>) ->
+	#ofp_queue_stats_request{port_no = ofp_port(Port), queue_id = ofp_queue(Queue)}.
+
+
+decode_stats_reply(_, Acc, <<>>) ->
+	lists:reverse(Acc);
+
+decode_stats_reply(desc, Acc, <<MfrDesc:256/bytes, HwDesc:256/bytes, SwDesc:256/bytes,
+								SerialNum:32/bytes, DpDesc:256/bytes, Rest/binary>>) ->
+	R = #ofp_desc_stats{mfr_desc = decode_binstring(MfrDesc), hw_desc = decode_binstring(HwDesc),
+						sw_desc = decode_binstring(SwDesc),	serial_num = decode_binstring(SerialNum),
+						dp_desc = decode_binstring(DpDesc)},
+	decode_stats_reply(desc, [R|Acc], Rest);
+
+decode_stats_reply(flow, Acc, <<Length:16/integer, TableId:8/integer, _Pad1:1/binary, Match:40/bytes, Sec:32/integer, NSec:32/integer,
+								Priority:16/integer, IdleTimeout:16/integer, HardTimeout:16/integer, _Pad2:6/bytes,
+								Cookie:64/integer, PacketCount:64/integer, ByteCount:64/integer, More/binary>>) ->
+	ActionLength = Length - 88,
+	<<Actions:ActionLength/bytes, Rest/binary>> = More,
+	R = #ofp_flow_stats{table_id = ofp_table(TableId), match = decode_ofp_match(Match),
+						duration = {Sec, NSec}, priority = Priority,
+						idle_timeout = IdleTimeout, hard_timeout = HardTimeout, cookie = Cookie,
+						packet_count = PacketCount, byte_count = ByteCount, actions = decode_actions(Actions)},
+	decode_stats_reply(flow, [R|Acc], Rest);
+
+decode_stats_reply(aggregate, Acc, <<PacketCount:64/integer, ByteCount:64/integer, FlowCount:32/integer, _Pad:4/bytes, Rest/binary>>) ->
+	R = #ofp_aggregate_stats_reply{packet_count = PacketCount, byte_count = ByteCount,
+								   flow_count = FlowCount},
+	decode_stats_reply(aggregate, [R|Acc], Rest);
+
+decode_stats_reply(table, Acc, <<TableId:8/integer, _Pad:3/bytes, Name:32/bytes, Wildcards:32/integer, MaxEntries:32/integer,
+								 ActiveCount:32/integer, LookupCount:64/integer, MatchedCount:64/integer, Rest/binary>>) ->
+	R = #ofp_table_stats{table_id = ofp_table(TableId), name = decode_binstring(Name), wildcards = Wildcards, max_entries = MaxEntries,
+						 active_count = ActiveCount, lookup_count = LookupCount, matched_count = MatchedCount},
+	decode_stats_reply(table, [R|Acc], Rest);
+
+decode_stats_reply(port, Acc, <<Port:16/integer, _Pad:6/bytes, RxPackets:64/integer, TxPackets:64/integer,
+								RxBytes:64/integer, TxBytes:64/integer, RxDropped:64/integer, TxDropped:64/integer,
+								RxErrors:64/integer, TxErrors:64/integer, RxFrameErr:64/integer, RxOverErr:64/integer,
+								RxCrcErr:64/integer, Collisions:64/integer, Rest/binary>>) ->
+	R = #ofp_port_stats{port_no = ofp_port(Port), rx_packets = RxPackets, tx_packets = TxPackets,
+						rx_bytes = RxBytes, tx_bytes = TxBytes, rx_dropped = RxDropped,
+						tx_dropped = TxDropped,	rx_errors = RxErrors, tx_errors = TxErrors,
+						rx_frame_err = RxFrameErr, rx_over_err = RxOverErr,
+						rx_crc_err = RxCrcErr, collisions = Collisions},
+	decode_stats_reply(port, [R|Acc], Rest);
+
+decode_stats_reply(queue, Acc, <<Port:16/integer, _Pad:2/bytes, Queue:32/integer, TxBytes:64/integer,
+								 TxPackets:64/integer, TxErrors:64/integer, Rest/binary>>) ->
+	R = #ofp_queue_stats{port_no = ofp_port(Port), queue_id = ofp_queue(Queue),
+						 tx_bytes = TxBytes, tx_packets = TxPackets, tx_errors = TxErrors},
+	decode_stats_reply(queue, [R|Acc], Rest).
+
+
 %%%===================================================================
 %%% Encode
 %%%===================================================================
@@ -671,6 +774,9 @@ int_maybe_undefined(undefined) -> 0.
 
 bin_maybe_undefined(X, Len) when is_binary(X) -> pad_to(Len, X);
 bin_maybe_undefined(undefined, Len) -> pad_to(Len, <<0>>).
+
+bin_fixed_length(X, Len) when size(X) > Len -> binary_part(X, {0, Len});
+bin_fixed_length(X, Len) -> bin_maybe_undefined(X, Len).
 	
 -spec encode_ofp_match(integer(), integer()|atom(), binary(), binary(), integer(),
 					   integer(), integer()|atom(), integer(), integer()|atom(),
@@ -768,6 +874,64 @@ encode_ofp_packet_out(BufferId, InPort, Actions, Data) when is_list(Actions) ->
 encode_ofp_packet_out(BufferId, InPort, Actions, Data) ->
 	InPort0 = ofp_port(InPort),
 	<<BufferId:32, InPort0:16, (size(Actions)):16, Actions/binary, Data/binary>>.
+
+encode_ofp_desc_stats(MfrDesc, HwDesc, SwDesc, SerialNum, DpDesc) ->
+	MfrDesc0 = bin_fixed_length(MfrDesc, 256),
+	HwDesc0 = bin_fixed_length(HwDesc, 256),
+	SwDesc0 = bin_fixed_length(SwDesc, 256),
+	SerialNum0 = bin_fixed_length(SerialNum, 32),
+	DpDesc0 = bin_fixed_length(DpDesc, 256),
+	<<MfrDesc0:256/bytes, HwDesc0:256/bytes, SwDesc0:256/bytes, SerialNum0:32/bytes, DpDesc0:256/bytes>>.
+
+encode_ofp_flow_stats_request(Match, TableId, OutPort) ->
+	TableId0 = ofp_table(TableId),
+	OutPort0 = ofp_port(OutPort),
+	<<Match/binary, TableId0:8, 0:8, OutPort0:16>>.
+
+encode_ofp_flow_stats(TableId, Match, {Sec, NSec} = _Duration, Priority, IdleTimeout, HardTimeout, Cookie, PacketCount, ByteCount, Actions) ->
+	Length = 88 + size(Actions),
+	<<Length:16, TableId:8, 0:8, Match/binary, Sec:32, NSec:32, Priority:16, IdleTimeout:16, HardTimeout:16, 0:48,
+	  Cookie:64, PacketCount:64, ByteCount:64, Actions/binary>>.
+
+encode_ofp_aggregate_stats_request(Match, TableId, OutPort) ->
+	TableId0 = ofp_table(TableId),
+	OutPort0 = ofp_port(OutPort),
+	<<Match/binary, TableId0:8, 0:8, OutPort0:16>>.
+
+encode_ofp_aggregate_stats_reply(PacketCount, ByteCount, FlowCount) ->
+	<<PacketCount:64, ByteCount:64, FlowCount:32, 0:32>>.
+
+encode_ofp_table_stats(TableId, Name, Wildcards, MaxEntries, ActiveCount, LookupCount, MatchedCount) ->
+	Name0 = bin_fixed_length(Name, 32),
+	<<TableId:8, 0:24, Name0/binary, Wildcards:32, MaxEntries:32, ActiveCount:32, LookupCount:64, MatchedCount:64>>.
+
+encode_ofp_port_stats_request(Port) ->
+	Port0 = ofp_port(Port),
+	<<Port0:16, 0:48>>.
+
+encode_ofp_port_stats(Port, RxPackets, TxPackets, RxBytes, TxBytes, RxDropped, TxDropped,
+					  RxErrors, TxErrors, RxFrameErr, RxOverErr, RxCrcErr, Collisions) ->
+	<<Port:16, 0:48, RxPackets:64, TxPackets:64, RxBytes:64, TxBytes:64, RxDropped:64, TxDropped:64,
+	 RxErrors:64, TxErrors:64, RxFrameErr:64, RxOverErr:64, RxCrcErr:64, Collisions:64>>.
+ 
+encode_ofp_queue_stats_request(Port, Queue) ->
+	Port0 = ofp_port(Port),
+	Queue0 = ofp_queue(Queue),
+	<<Port0:16, 0:16, Queue0:32>>.
+
+encode_ofp_queue_stats(Port, Queue, TxBytes, TxPackets, TxErrors) ->
+	<<Port:16, 0:16, Queue:32, TxBytes:64, TxPackets:64, TxErrors:64>>.
+
+encode_ofp_stats_request(Type, Body) when is_atom(Type) ->
+	encode_ofp_stats_request(ofp_stats_type(Type), Body);
+encode_ofp_stats_request(Type, Body) when is_integer(Type) ->
+	<<Type:16, 0:16, Body/binary>>.
+
+%% TODO: we don't support flags in stats replies...
+encode_ofp_stats_reply(Type, Body) when is_atom(Type) ->
+	encode_ofp_stats_reply(ofp_stats_type(Type), Body);
+encode_ofp_stats_reply(Type, Body) when is_integer(Type) ->
+	<<Type:16, 0:16, Body/binary>>.
 
 -spec encode_nxt_flow_mod_table_id(integer()|boolean()) -> binary().
 encode_nxt_flow_mod_table_id(Set)
@@ -1078,7 +1242,68 @@ encode_actions(List) when is_list(List) ->
 	encode_actions(List, []);
 encode_actions(Action) when is_tuple(Action) ->
 	encode_action(Action).
-	
+
+%% Stats Reques/Reply
+
+encode_stats_reply_entry(#ofp_desc_stats{mfr_desc = MfrDesc, hw_desc = HwDesc, sw_desc = SwDesc,
+						   serial_num = SerialNum, dp_desc = DpDesc}) ->
+	encode_ofp_desc_stats(MfrDesc, HwDesc, SwDesc, SerialNum, DpDesc);
+
+encode_stats_reply_entry(#ofp_flow_stats{table_id = TableId, match = Match, duration = Duration, priority = Priority,
+						   idle_timeout = IdleTimeout, hard_timeout = HardTimeout, cookie = Cookie,
+						   packet_count = PacketCount, byte_count = ByteCount, actions = Actions}) ->
+	encode_ofp_flow_stats(TableId, encode_match(Match), Duration, Priority, IdleTimeout, HardTimeout,
+						  Cookie, PacketCount, ByteCount, Actions);
+
+encode_stats_reply_entry(#ofp_aggregate_stats_reply{packet_count = PacketCount, byte_count = ByteCount, flow_count = FlowCount}) ->
+	encode_ofp_aggregate_stats_reply(PacketCount, ByteCount, FlowCount);
+
+encode_stats_reply_entry(#ofp_table_stats{table_id = TableId, name = Name, wildcards = Wildcards, max_entries = MaxEntries,
+							active_count = ActiveCount, lookup_count = LookupCount, matched_count = MatchedCount}) ->
+	encode_ofp_table_stats(TableId, Name, Wildcards, MaxEntries, ActiveCount, LookupCount, MatchedCount);
+
+encode_stats_reply_entry(#ofp_port_stats{port_no = Port, rx_packets = RxPackets, tx_packets = TxPackets, rx_bytes = RxBytes, tx_bytes = TxBytes,
+						   rx_dropped = RxDropped, tx_dropped = TxDropped, rx_errors = RxErrors, tx_errors = TxErrors,
+						   rx_frame_err = RxFrameErr, rx_over_err = RxOverErr, rx_crc_err = RxCrcErr, collisions = Collisions}) ->
+	encode_ofp_port_stats(Port, RxPackets, TxPackets, RxBytes, TxBytes, RxDropped, TxDropped,
+						  RxErrors, TxErrors, RxFrameErr, RxOverErr, RxCrcErr, Collisions);
+
+encode_stats_reply_entry(#ofp_queue_stats{port_no = Port, queue_id = Queue, tx_bytes = TxBytes, tx_packets = TxPackets, tx_errors = TxErrors}) ->
+	encode_ofp_queue_stats(Port, Queue, TxBytes, TxPackets, TxErrors).
+
+stats_reply_record_type(ofp_desc_stats)				-> desc;
+stats_reply_record_type(ofp_flow_stats)				-> flow;
+stats_reply_record_type(ofp_aggregate_stats_reply)	-> aggregate;
+stats_reply_record_type(ofp_table_stats)			-> table;
+stats_reply_record_type(ofp_port_stats)				-> port;
+stats_reply_record_type(ofp_queue_stats)			-> queue.
+
+encode_stats_reply([], _RecType, Acc) ->
+	list_to_binary(lists:reverse(Acc));
+encode_stats_reply([Head|Rest], RecType, Acc) ->
+	case is_record(Head, RecType) of
+		true ->
+			encode_stats_reply(Rest, RecType, [encode_stats_reply_entry(Head)|Acc]);
+		_ ->
+			error(badarg, [Head])
+	end.
+
+encode_stats_reply(Reply, RecType) ->
+	Body = encode_stats_reply(Reply, RecType, []),
+	Type = stats_reply_record_type(RecType),
+	encode_ofp_stats_reply(Type, Body).
+
+encode_match(#ofp_match{wildcards = Wildcards, in_port = InPort,
+					  dl_src = DlSrc, dl_dst = DlDst, dl_vlan = DlVlan, dl_vlan_pcp = DlVlanPcp, dl_type = DlType,
+					  nw_tos = NwTos, nw_proto = NwProto, nw_src = NwSrc, nw_dst = NwDst,
+					  tp_src = TpSrc, tp_dst = TpDst}) ->
+	encode_ofp_match(Wildcards,
+					 InPort, DlSrc, DlDst, DlVlan, DlVlanPcp, DlType,
+					 NwTos, NwProto, NwSrc, NwDst, TpSrc, TpDst);
+encode_match(Match)
+  when is_binary(Match) ->
+	Match.
+
 encode_msg(#ofp_switch_features{datapath_id = DataPathId,
 								n_buffers = NBuffers,
 								n_tables = NTables,
@@ -1096,30 +1321,47 @@ encode_msg(#ofp_switch_config{flags = Flags, miss_send_len = MissSendLen}) ->
 encode_msg(#ofp_port_status{reason = Reason, port = Port}) ->
 	encode_ofp_port_status(Reason, encode_phy_port(Port));
 
-encode_msg(#ofp_match{wildcards = Wildcards, in_port = InPort,
-					  dl_src = DlSrc, dl_dst = DlDst, dl_vlan = DlVlan, dl_vlan_pcp = DlVlanPcp, dl_type = DlType,
-					  nw_tos = NwTos, nw_proto = NwProto, nw_src = NwSrc, nw_dst = NwDst,
-					  tp_src = TpSrc, tp_dst = TpDst}) ->
-	encode_ofp_match(Wildcards,
-					 InPort, DlSrc, DlDst, DlVlan, DlVlanPcp, DlType,
-					 NwTos, NwProto, NwSrc, NwDst, TpSrc, TpDst);
-
 encode_msg(#ofp_flow_mod{match = Match, cookie = Cookie, command = Command,
 						 idle_timeout = IdleTimeout, hard_timeout = HardTimeout,
 						 priority = Priority, buffer_id = BufferId,
 						 out_port = OutPort, flags = Flags, actions = Actions}) ->
-	encode_ofp_flow_mod(encode_msg(Match), Cookie, Command, 
+	encode_ofp_flow_mod(encode_match(Match), Cookie, Command, 
 						IdleTimeout, HardTimeout, Priority,	BufferId, OutPort,
 						enc_flags(ofp_flow_mod_flags(), Flags), encode_actions(Actions));
 
 encode_msg(#ofp_flow_removed{match = Match, cookie = Cookie, priority = Priority,
 							 reason = Reason, duration = Duration, idle_timeout = IdleTimeout,
 							 packet_count = PacketCount, byte_count = ByteCount}) ->
-	encode_ofp_flow_removed(encode_msg(Match), Cookie, Priority, Reason, Duration,
+	encode_ofp_flow_removed(encode_match(Match), Cookie, Priority, Reason, Duration,
 							IdleTimeout, PacketCount, ByteCount);
 
 encode_msg(#ofp_packet_out{buffer_id = BufferId, in_port = InPort, actions = Actions, data = Data}) ->
 	encode_ofp_packet_out(BufferId, InPort, encode_actions(Actions), Data);
+
+encode_msg([Head|_] = Msg)
+  when is_record(Head, ofp_desc_stats); is_record(Head, ofp_flow_stats); is_record(Head, ofp_aggregate_stats_reply);
+	   is_record(Head, ofp_table_stats); is_record(Head, ofp_port_stats); is_record(Head, ofp_queue_stats) ->
+	encode_stats_reply(Msg, element(1, Head));
+
+encode_msg(#ofp_desc_stats_request{}) ->
+	encode_ofp_stats_request(desc, <<>>);
+
+encode_msg(#ofp_flow_stats_request{match = Match, table_id = TableId, out_port = OutPort}) ->
+	encode_ofp_stats_request(flow, encode_ofp_flow_stats_request(encode_match(Match), TableId, OutPort));
+
+encode_msg(#ofp_aggregate_stats_request{match = Match, table_id = TableId, out_port = OutPort}) ->
+	encode_ofp_stats_request(aggregate, encode_ofp_aggregate_stats_request(encode_match(Match), TableId, OutPort));
+
+encode_msg(#ofp_table_stats_request{}) ->
+	encode_ofp_stats_request(table, <<>>);
+
+encode_msg(#ofp_port_stats_request{port_no = Port}) ->
+	encode_ofp_stats_request(port, encode_ofp_port_stats_request(Port));
+
+encode_msg(#ofp_queue_stats_request{port_no = Port, queue_id = Queue}) ->
+	encode_ofp_stats_request(queue, encode_ofp_queue_stats_request(Port, Queue));
+
+%% Nicira Extensions
 
 encode_msg(#nxt_flow_mod_table_id{set = Set}) ->
 	encode_nxt_flow_mod_table_id(Set);

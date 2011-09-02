@@ -15,6 +15,7 @@
 					   'barrier_reply' | 'queue_get_config_request' | 'queue_get_config_reply'.
 -type ofp_addr_type() :: 'src' | 'dst'.
 -type ofp_reason() :: atom() | non_neg_integer().
+-type ofp_duration() :: {non_neg_integer(),non_neg_integer()}.
 
 -type nxm_reg() :: {'nxm_nx_reg' | 'nxm_nx_regw' , non_neg_integer()}.
 -type nxm_header() :: 'nxm_of_in_port' | 'nxm_of_eth_dst' | 'nxm_of_eth_dst_w' |
@@ -281,4 +282,111 @@
 		  nbits,
 		  dst,
 		  id
+}).
+
+%% Read State Messages
+
+-record(ofp_desc_stats_request, {}).
+
+-record(ofp_desc_stats, {
+		  mfr_desc		:: binary(),					%% Manufacturer description.
+		  hw_desc		:: binary(),					%% Hardware description.
+		  sw_desc		:: binary(),					%% Software description.
+		  serial_num	:: binary(),					%% Serial number.
+		  dp_desc		:: binary()						%% Human readable description of datapath.
+}).
+
+-record(ofp_flow_stats_request, {
+		  match		:: binary() | #ofp_match{},			%% Fields to match.
+		  table_id	:: non_neg_integer() | 'all' | 'emergency',
+														%% ID of table to read (from ofp_table_stats),
+														%% 0xff for all tables or 0xfe for emergency.
+		  out_port	:: non_neg_integer() | 'none'		%% Require matching entries to include this
+														%% as an output port. A value of OFPP_NONE
+														%% indicates no restriction.
+}).
+
+-record(ofp_flow_stats, {
+		  table_id		:: non_neg_integer(),			%% ID of table flow came from.
+		  match			:: binary() | #ofp_match{},		%% Description of fields.
+		  duration		:: ofp_duration(),				%% Time flow has been alive in {seconds, nanoseconds}
+		  priority		:: non_neg_integer(),			%% Priority of the entry. Only meaningful
+														%% when this is not an exact-match entry.
+		  idle_timeout	:: non_neg_integer(),			%% Number of seconds idle before expiration.
+		  hard_timeout	:: non_neg_integer(),			%% Number of seconds before expiration.
+		  cookie		:: non_neg_integer(),			%% Opaque controller-issued identifier.
+		  packet_count	:: non_neg_integer(),			%% Number of packets in flow.
+		  byte_count	:: non_neg_integer(),			%% Number of bytes in flow.
+		  actions		:: ofp_actions()				%% Actions.
+}).
+
+-record(ofp_aggregate_stats_request, {
+		  match		:: binary() | #ofp_match{},			%% Fields to match.
+		  table_id	:: non_neg_integer() | 'all' | 'emergency',
+														%% ID of table to read (from ofp_table_stats)
+														%% 0xff for all tables or 0xfe for emergency.
+		  out_port	:: non_neg_integer() | 'none'		%% Require matching entries to include this
+														%% as an output port. A value of OFPP_NONE
+														%% indicates no restriction.
+}).
+
+-record(ofp_aggregate_stats_reply, {
+		  packet_count	:: non_neg_integer(),			%% Number of packets in flows.
+		  byte_count	:: non_neg_integer(),			%% Number of bytes in flows.
+		  flow_count	:: non_neg_integer()			%% Number of flows.
+}).
+
+-record(ofp_table_stats_request, {}).
+-record(ofp_table_stats, {
+		  table_id		:: non_neg_integer(),			%% Identifier of table. Lower numbered tables
+														%% are consulted first.
+		  name			:: binary(),
+		  wildcards		:: non_neg_integer(),			%% Bitmap of OFPFW_* wildcards that are
+														%% supported by the table.
+		  max_entries	:: non_neg_integer(),			%% Max number of entries supported. */
+		  active_count	:: non_neg_integer(),			%% Number of active entries. */
+		  lookup_count	:: non_neg_integer(),			%% Number of packets looked up in table. */
+		  matched_count	:: non_neg_integer()			%% Number of packets that hit table. */
+}).
+
+-record(ofp_port_stats_request, {
+		  port_no	:: non_neg_integer() | 'none'		%% OFPST_PORT message must request statistics
+														%% either for a single port (specified in
+														%% port_no) or for all ports (if port_no ==
+														%% OFPP_NONE).
+}).
+
+-record(ofp_port_stats, {
+		  port_no		:: non_neg_integer(),
+		  rx_packets	:: non_neg_integer(),			%% Number of received packets.
+		  tx_packets	:: non_neg_integer(),			%% Number of transmitted packets.
+		  rx_bytes		:: non_neg_integer(),			%% Number of received bytes.
+		  tx_bytes		:: non_neg_integer(),			%% Number of transmitted bytes.
+		  rx_dropped	:: non_neg_integer(),			%% Number of packets dropped by RX.
+		  tx_dropped	:: non_neg_integer(),			%% Number of packets dropped by TX.
+		  rx_errors		:: non_neg_integer(),			%% Number of receive errors. This is a super-set
+														%% of more specific receive errors and should be
+														%% greater than or equal to the sum of all
+														%% rx_*_err values.
+		  tx_errors		:: non_neg_integer(),			%% Number of transmit errors. This is a super-set
+														%% of more specific transmit errors and should be
+														%% greater than or equal to the sum of all
+														%% tx_*_err values (none currently defined.)
+		  rx_frame_err	:: non_neg_integer(),			%% Number of frame alignment errors.
+		  rx_over_err	:: non_neg_integer(),			%% Number of packets with RX overrun.
+		  rx_crc_err	:: non_neg_integer(),			%% Number of CRC errors.
+		  collisions	:: non_neg_integer()			%% Number of collisions.
+}).
+
+-record(ofp_queue_stats_request, {
+		  port_no	:: non_neg_integer() | 'all',		%% All ports if OFPT_ALL.
+		  queue_id	:: non_neg_integer() | 'all'		%% All queues if OFPQ_ALL.
+}).
+
+-record(ofp_queue_stats, {
+		  port_no		:: non_neg_integer(),
+		  queue_id		:: non_neg_integer(),			%% Queue i.d
+		  tx_bytes		:: non_neg_integer(),			%% Number of transmitted bytes.
+		  tx_packets	:: non_neg_integer(),			%% Number of transmitted packets.
+		  tx_errors		:: non_neg_integer()			%% Number of packets dropped due to overrun.
 }).

@@ -95,7 +95,7 @@ send(Sw, Type, Xid, Msg) ->
 %%--------------------------------------------------------------------
 install_flow(Sw, Match, Cookie, IdleTimeout, HardTimeout,
 			 Actions, BufferId, Priority, InPort, Packet) ->
-	MatchBin = flower_packet:encode_msg(Match),
+	MatchBin = flower_packet:encode_match(Match),
 	ActionsBin = flower_packet:encode_actions(Actions),
 	PktOut = flower_packet:encode_ofp_flow_mod(MatchBin, Cookie, add, IdleTimeout, HardTimeout, Priority, BufferId, none, 1, ActionsBin),
 
