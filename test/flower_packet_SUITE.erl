@@ -121,6 +121,16 @@ ofp_stats_reply_port() ->
 	  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 	  0,0,0,0,0,0,0,0,0,0,0,0,0,0>>.
 
+ofp_nxst_flow_stats() ->
+	<<1,17,0,216,0,0,0,16,255,255,0,0,0,0,35,32,0,0,0,0,0,0,0,0,0,96,
+	  0,0,0,0,0,1,14,1,208,192,0,0,0,60,0,0,0,37,0,0,0,0,0,0,0,0,0,0,
+	  0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,98,0,0,6,2,8,0,0,0,14,4,10,48,
+	  0,2,0,0,16,4,10,48,0,3,0,0,12,1,1,0,0,26,1,0,0,0,28,1,0,0,0,0,0,
+	  0,0,8,0,1,0,0,0,96,0,0,0,0,0,0,13,242,142,128,0,0,0,60,0,0,0,37,
+	  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,98,0,0,6,
+	  2,8,0,0,0,14,4,10,48,0,3,0,0,16,4,10,48,0,2,0,0,12,1,1,0,0,26,1,
+	  8,0,0,28,1,0,0,0,0,0,0,0,8,255,254,0,0>>.
+
 %%--------------------------------------------------------------------
 %% @spec suite() -> Info
 %% Info = [tuple()]
@@ -289,6 +299,59 @@ test_nx_flow_mod(_Config) ->
 	MOut = MIn,
 	ok.
 
+test_nxst_flow_stats_request(_Config) ->
+	NxMatches = [
+				  {nxm_of_in_port, << 0:16 >>},
+				  {nxm_of_eth_dst, << 0,1,2,3,4,5 >>},
+				  {nxm_of_eth_dst_w, {<< 0,1,2,3,4,5 >>, << 255,255,255,255,255,255 >>}},
+				  {nxm_of_eth_src, << 0,1,2,3,4,5 >>},
+				  {nxm_of_eth_type, << 0:16 >>},
+				  {nxm_of_vlan_tci, << 0:16 >>},
+				  {nxm_of_vlan_tci_w, {<< 0:16 >>, << 0:16 >>}},
+				  {nxm_of_ip_tos, << 0 >>},
+				  {nxm_of_ip_proto, << 0 >>},
+				  {nxm_of_ip_src, << 1,2,3,4 >>},
+				  {nxm_of_ip_src_w, {<< 1,2,3,4 >>, << 255,255,255,255 >>}},
+				  {nxm_of_ip_dst, << 5,6,7,8 >>},
+				  {nxm_of_ip_dst_w, {<<  5,6,7,8 >>, << 255,255,255,255 >>}},
+				  {nxm_of_tcp_src, << 0:16 >>},
+				  {nxm_of_tcp_dst, << 0:16 >>},
+				  {nxm_of_udp_src, << 0:16 >>},
+				  {nxm_of_udp_dst, << 0:16 >>},
+				  {nxm_of_icmp_type, << 0 >>},
+				  {nxm_of_icmp_code, << 0 >>},
+				  {nxm_of_arp_op, << 0:16 >>},
+				  {nxm_of_arp_spa, << 0:32 >>},
+				  {nxm_of_arp_spa_w, {<< 0:32 >>, << 255,255,255,255 >>}},
+				  {nxm_of_arp_tpa, << 0:32 >>},
+				  {nxm_of_arp_tpa_w, {<< 0:32 >>, << 255,255,255,255 >>}},
+				  {nxm_nx_tun_id, << 0,1,2,3,4,5,6,7 >>},
+				  {nxm_nx_tun_id_w, {<< 0,1,2,3,4,5,6,7 >>, << 255,255,255,255,255,255,255,255 >>}},
+				  {nxm_nx_arp_sha, << 0,1,2,3,4,5 >>},
+				  {nxm_nx_arp_tha, << 0,1,2,3,4,5 >>},
+				  {nxm_nx_ipv6_src, << 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 >>},
+				  {nxm_nx_ipv6_src_w, {<< 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 >>, << 255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255 >>}},
+				  {nxm_nx_ipv6_dst, << 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 >>},
+				  {nxm_nx_ipv6_dst_w, {<< 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 >>, << 255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255 >>}},
+				  {nxm_nx_icmpv6_type, << 0 >>},
+				  {nxm_nx_icmpv6_code, << 0 >>},
+				  {nxm_nx_nd_target, << 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 >>},
+				  {nxm_nx_nd_sll, << 0,1,2,3,4,5 >>},
+				  {nxm_nx_nd_tll, << 0,1,2,3,4,5 >>}],
+
+	FlowStats = #ofp_nxst_flow_stats_request{out_port = none, table_id = all, nx_match = NxMatches},
+	MOut = #ovs_msg{version = 1, type = stats_request, xid = 1, msg = FlowStats},
+	Pkt = flower_packet:encode(MOut),
+	[MIn] = flower_packet:decode(Pkt),
+	MOut = MIn,
+	ok.
+
+test_nxst_flow_stats(_Config) ->
+	Sw = ofp_nxst_flow_stats(),
+	[#ovs_msg{msg = [#ofp_nxst_flow_stats{}|_R]}] = flower_packet:decode(Sw),
+	Sw = flower_packet:encode(flower_packet:decode(Sw)),
+	ok.
+
 test_stats_req(_Config) ->
 	flower_packet:encode_msg(#ofp_desc_stats_request{}),
 	flower_packet:encode_msg(#ofp_flow_stats_request{match = <<>>, table_id = all, out_port = none}),
@@ -305,7 +368,7 @@ all() ->
 	 test_port_status_cfg_down, test_port_status_lnk_down,
 	 test_port_status_lnk_up,
 	 test_flow_mod,
-	 test_nx_flow_mod,
+	 test_nx_flow_mod, test_nxst_flow_stats_request, test_nxst_flow_stats,
 	 test_stats_req].
 
 init_per_suite(Config) ->

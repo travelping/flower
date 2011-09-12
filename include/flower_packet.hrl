@@ -330,7 +330,7 @@
 														%% indicates no restriction.
 }).
 
--record(ofp_aggregate_stats_reply, {
+-record(ofp_aggregate_stats, {
 		  packet_count	:: non_neg_integer(),			%% Number of packets in flows.
 		  byte_count	:: non_neg_integer(),			%% Number of bytes in flows.
 		  flow_count	:: non_neg_integer()			%% Number of flows.
@@ -389,4 +389,46 @@
 		  tx_bytes		:: non_neg_integer(),			%% Number of transmitted bytes.
 		  tx_packets	:: non_neg_integer(),			%% Number of transmitted packets.
 		  tx_errors		:: non_neg_integer()			%% Number of packets dropped due to overrun.
+}).
+
+%% nicira extensions
+
+-record(ofp_nxst_flow_stats_request, {
+		  out_port	:: non_neg_integer() | 'none',		%% Require matching entries to include this
+														%% as an output port. A value of OFPP_NONE
+														%% indicates no restriction.
+		  table_id	:: non_neg_integer() | 'all' | 'emergency',
+														%% ID of table to read (from ofp_table_stats),
+														%% 0xff for all tables or 0xfe for emergency.
+		  nx_match	:: binary() | #ofp_match{}			%% Fields to match.
+}).
+
+-record(ofp_nxst_flow_stats, {
+		  table_id		:: non_neg_integer(),			%% ID of table flow came from.
+		  duration		:: ofp_duration(),				%% Time flow has been alive in {seconds, nanoseconds}
+		  priority		:: non_neg_integer(),			%% Priority of the entry. Only meaningful
+														%% when this is not an exact-match entry.
+		  idle_timeout	:: non_neg_integer(),			%% Number of seconds idle before expiration.
+		  hard_timeout	:: non_neg_integer(),			%% Number of seconds before expiration.
+		  cookie		:: non_neg_integer(),			%% Opaque controller-issued identifier.
+		  packet_count	:: non_neg_integer(),			%% Number of packets in flow.
+		  byte_count	:: non_neg_integer(),			%% Number of bytes in flow.
+		  nx_match		:: binary() | #ofp_match{},		%% Description of fields.
+		  actions		:: ofp_actions()				%% Actions.
+}).
+
+-record(ofp_nxst_aggregate_stats_request, {
+		  out_port	:: non_neg_integer() | 'none',		%% Require matching entries to include this
+														%% as an output port. A value of OFPP_NONE
+														%% indicates no restriction.
+		  table_id	:: non_neg_integer() | 'all' | 'emergency',
+														%% ID of table to read (from ofp_table_stats)
+														%% 0xff for all tables or 0xfe for emergency.
+		  nx_match	:: binary() | #ofp_match{}			%% Fields to match.
+}).
+
+-record(ofp_nxst_aggregate_stats, {
+		  packet_count	:: non_neg_integer(),			%% Number of packets in flows.
+		  byte_count	:: non_neg_integer(),			%% Number of bytes in flows.
+		  flow_count	:: non_neg_integer()			%% Number of flows.
 }).
