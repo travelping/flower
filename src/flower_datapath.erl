@@ -31,6 +31,7 @@
 -record(state, {
 		  xid = 1,
 		  socket,
+		  pending = <<>>,
 		  features
 		 }).
 
@@ -323,23 +324,32 @@ handle_sync_event(_Event, _From, StateName, State) ->
 %%--------------------------------------------------------------------
 handle_info({tcp, Socket, Data}, StateName, #state{socket = Socket} = State) ->
 	?DEBUG("handle_info: ~p~n", [Data]),
-	[Msg|Rest] = flower_packet:decode(Data),
+	{Msg, DataRest} = flower_packet:decode(<<(State#state.pending)/binary, Data/binary>>),
+	State1 = State#state{pending = DataRest},
+	?DEBUG("handle_info: decoded: ~p~nrest: ~p~n", [Msg, DataRest]),
 
-	%% exec first Msg directly....
-	Reply = ?MODULE:StateName({Msg#ovs_msg.type, Msg#ovs_msg.xid, Msg#ovs_msg.msg}, State),
-	case Reply of
-		{next_state, _, _} ->
-			ok = inet:setopts(Socket, [{active, once}]);
-		{next_state, _, _, _} -> 
-			ok = inet:setopts(Socket, [{active, once}]);
-		_ ->
-			ok
-	end,
+	case Msg of
+		[] -> 
+			ok = inet:setopts(Socket, [{active, once}]),
+			{next_state, StateName, State1};
 
-	%% push any other message into our MailBox....
-	lists:foldl(fun(M, _) -> gen_fsm:send_event(self(), {M#ovs_msg.type, M#ovs_msg.xid, M#ovs_msg.msg}) end, ok, Rest),
+		[First|Next] ->
+			%% exec first Msg directly....
+			Reply = ?MODULE:StateName({First#ovs_msg.type, First#ovs_msg.xid, First#ovs_msg.msg}, State1),
+			case Reply of
+				{next_state, _, _} ->
+					ok = inet:setopts(Socket, [{active, once}]);
+				{next_state, _, _, _} -> 
+					ok = inet:setopts(Socket, [{active, once}]);
+				_ ->
+					ok
+			end,
 
-	Reply;
+			%% push any other message into our MailBox....
+			lists:foldl(fun(M, _) -> gen_fsm:send_event(self(), {M#ovs_msg.type, M#ovs_msg.xid, M#ovs_msg.msg}) end, ok, Next),
+
+			Reply
+	end;
 
 handle_info({tcp_closed, Socket}, _StateName, #state{socket = Socket} = State) ->
 	error_logger:info_msg("Client Disconnected."),

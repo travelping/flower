@@ -51,21 +51,18 @@
 decode(Msg) ->
 	decode(Msg, []).
 
-decode(<<>>, Acc) ->
-	lists:reverse(Acc);
 decode(<<Version:8/integer, Type:8/integer, Length:16/integer, Xid:32/integer,
-		 _/binary>> = Data, Acc) ->
-	if 
-		size(Data) < Length ->
-			{error, invalid_length};
-		true ->
-			MsgLen = Length - 8,
-			<<_Hdr:8/bytes, Msg:MsgLen/bytes, Rest/binary>> = Data,
-			MType = ofpt(Type),
-			M = decode_msg(MType, Msg),
-			?DEBUG("deode got: ~p~n", [M]),
-			decode(Rest, [#ovs_msg{version = Version, type = MType, xid = Xid, msg = M}|Acc])
-	end.
+		 _/binary>> = Data, Acc)
+  when size(Data) >= Length ->
+	MsgLen = Length - 8,
+	<<_Hdr:8/bytes, Msg:MsgLen/bytes, Rest/binary>> = Data,
+	MType = ofpt(Type),
+	M = decode_msg(MType, Msg),
+	?DEBUG("deode got: ~p~n", [M]),
+	decode(Rest, [#ovs_msg{version = Version, type = MType, xid = Xid, msg = M}|Acc]);
+
+decode(Rest, Acc) ->
+	{lists:reverse(Acc), Rest}.
 
 encode(#ovs_msg{version = Version, type = Type, xid = Xid, msg = Msg}) ->
 	Mtype = ofpt(Type),
