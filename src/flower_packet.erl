@@ -92,6 +92,7 @@ vendor(nicira) -> ?VENDOR_NICIRA.
 	 
 eth_type(?ETH_TYPE_IP)    -> ip;
 eth_type(?ETH_TYPE_ARP)   -> arp;
+eth_type(?ETH_TYPE_RARP)  -> rarp;
 eth_type(?ETH_TYPE_MOPRC) -> moprc;
 eth_type(?ETH_TYPE_VLAN)  -> vlan;
 eth_type(?ETH_TYPE_IPV6)  -> ipv6;
@@ -102,6 +103,7 @@ eth_type(X) when is_integer(X) -> X;
 eth_type(none)  -> ?ETH_TYPE_NONE;
 eth_type(ip)    -> ?ETH_TYPE_IP;
 eth_type(arp)   -> ?ETH_TYPE_ARP;
+eth_type(rarp)  -> ?ETH_TYPE_RARP;
 eth_type(moprc) -> ?ETH_TYPE_MOPRC;
 eth_type(vlan)  -> ?ETH_TYPE_VLAN;
 eth_type(ipv6)  -> ?ETH_TYPE_IPV6;
