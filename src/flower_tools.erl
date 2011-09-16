@@ -20,14 +20,19 @@ tuple_to_ip({A, B, C, D, E, F, G, H}) ->
 	<<A:16, B:16, C:16, D:16, E:16, F:16, G:16, H:16>>.
 
 format_mac(<<A:8, B:8, C:8, D:8, E:8, F:8>>) ->
-	flat_format("~2.16.0B:~2.16.0B:~2.16.0B:~2.16.0B:~2.16.0B:~2.16.0B", [A, B, C, D, E, F]).
+	flat_format("~2.16.0B:~2.16.0B:~2.16.0B:~2.16.0B:~2.16.0B:~2.16.0B", [A, B, C, D, E, F]);
+format_mac(MAC) ->
+	flat_format("~w", MAC).
 
 format_ip(undefined) ->
 	"undefined";
 format_ip(<<A:8, B:8, C:8, D:8>>) ->
 	flat_format("~B.~B.~B.~B", [A, B, C, D]);
 format_ip(<<A:16, B:16, C:16, D:16, E:16, F:16, G:16, H:16>>) ->
-	flat_format("~.16B:~.16B:~.16B:~.16B:~.16B:~.16B:~.16B:~.16B", [A, B, C, D, E, F, G, H]).
+	flat_format("~.16B:~.16B:~.16B:~.16B:~.16B:~.16B:~.16B:~.16B", [A, B, C, D, E, F, G, H]);
+format_ip(IP) ->
+	flat_format("~w", IP).
+
 
 format_flow(#flow{tun_id = TunId, nw_src = NwSrc, nw_dst = NwDst, in_port = InPort, vlan_tci = VlanTci,
 				  dl_type = DlType, dl_src = DlSrc, dl_dst = DlDst,
