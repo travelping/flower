@@ -8,6 +8,7 @@
 %%%-------------------------------------------------------------------
 
 -type ofp_flags() :: list(atom()).
+-type ofp_error() :: 'hello_failed' | 'bad_request' | 'bad_action' | 'flow_mod_failed' | 'port_mod_failed' | 'queue_op_failed'.
 -type ofp_port() :: 'in_port' | 'table' | 'normal' | 'flood' | 'all' | 'controller' | 'local' | 'none' | non_neg_integer().
 -type ofp_command() :: 'hello' | 'error' | 'echo_request' | 'echo_reply' | 'vendor' | 'features_request' | 'features_reply' |
 					   'get_config_request' | 'get_config_reply' | 'set_config' | 'packet_in' | 'flow_removed' | 'port_status' |

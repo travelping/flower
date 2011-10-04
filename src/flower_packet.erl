@@ -159,13 +159,8 @@ ofpt(queue_get_config_reply)	-> 21;
 
 ofpt(_)		-> error.
 
-ofp_error_type(0) -> hello_failed;
-ofp_error_type(1) -> bad_request;
-ofp_error_type(2) -> bad_action;
-ofp_error_type(3) -> flow_mod_failed;
-ofp_error_type(4) -> port_mod_failed;
-ofp_error_type(5) -> queue_op_failed;
-
+-spec ofp_error_type(non_neg_integer()) -> ofp_error() | non_neg_integer();
+					(ofp_error()) -> non_neg_integer().
 ofp_error_type(hello_failed)    -> 0;
 ofp_error_type(bad_request)     -> 1;
 ofp_error_type(bad_action)      -> 2;
@@ -173,7 +168,14 @@ ofp_error_type(flow_mod_failed) -> 3;
 ofp_error_type(port_mod_failed) -> 4;
 ofp_error_type(queue_op_failed) -> 5;
 
-ofp_error_type(_) -> error.
+ofp_error_type(0) -> hello_failed;
+ofp_error_type(1) -> bad_request;
+ofp_error_type(2) -> bad_action;
+ofp_error_type(3) -> flow_mod_failed;
+ofp_error_type(4) -> port_mod_failed;
+ofp_error_type(5) -> queue_op_failed;
+
+ofp_error_type(X) when is_integer(X) -> X.
 
 ofp_error_code_type(hello_failed, 0) -> incompatible;
 ofp_error_code_type(hello_failed, 1) -> eperm;
