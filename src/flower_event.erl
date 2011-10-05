@@ -74,7 +74,7 @@ handle_pid_remove(Pid, _Event, Events) ->
 	Events1 = orddict:filter(fun(Key, Value) when Value == Pid -> flower_dispatcher:delete(Key), false;
 								(_Key, _Value) -> true end,
 							 Events),
-	{noreply, Events1}.
+	Events1.
 
 handle_death(_Pid, _Reason, Events) ->
 	Events.
