@@ -8,41 +8,35 @@
 %%%-------------------------------------------------------------------
 -module(flower_dispatcher).
 
--behaviour(gen_server).
+-behaviour(regine_server).
 
 %% API
 -export([start_link/0]).
--export([delete/1, join/1, leave/1, terminate/0, dispatch/3]).
+-export([delete/1, join/1, leave/1, dispatch/3]).
 
-%% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-		 terminate/2, code_change/3]).
+%% regine_server callbacks
+-export([init/1, handle_register/4, handle_unregister/3, handle_pid_remove/3, handle_death/3, terminate/2]).
 
 -define(SERVER, ?MODULE). 
 
 -record(state, {
-		  events
 		 }).
-
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
 start_link() ->
-	gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
-
-delete(Event) ->
-	gen_server:call(?SERVER, {delete, Event}).
+	regine_server:start_link({local, ?SERVER}, ?MODULE, []).
 
 join(Event) ->
-	gen_server:call(?SERVER, {join, Event}).
+	regine_server:register(?SERVER, self(), Event, self()).
 
 leave(Event) ->
-	gen_server:call(?SERVER, {leave, Event}).
+	regine_server:unregister(?SERVER, Event, self()).
 
-terminate() ->
-	gen_server:call(?SERVER, terminate).
+delete(Event) ->
+	regine_server:unregister(?SERVER, Event, all).
 
 dispatch(Event, Sw, Msg) ->
 	Handlers = ets:lookup(?SERVER, Event),
@@ -51,7 +45,7 @@ dispatch(Event, Sw, Msg) ->
 				  end, Handlers).
 
 %%%===================================================================
-%%% gen_server functions
+%%% regine_server functions
 %%%===================================================================
 
 init([]) ->
@@ -59,33 +53,28 @@ init([]) ->
 	ets:new(?SERVER, [bag, protected, named_table, {keypos, 1}]),
 	{ok, #state{}}.
 
-handle_call({delete, Event}, _From, State) ->
-	ets:delete(?SERVER, Event),
-	{reply, ok, State};
-
-handle_call({join, Event}, {Pid, _Ref} = _From, State) ->
+handle_register(Pid, Event, Pid, State) ->
 	Reply = do_join(Event, Pid),
-	{reply, Reply, State};
+	{ok, Reply, State}.
 
-handle_call({leave, Event}, {Pid, _Ref} = _From, State) ->
-	Reply = do_leave(Event, Pid),
-	{reply, Reply, State}.
+handle_unregister(Event, State, all) ->
+	Pids = ets:lookup_element(?SERVER, Event, 2),
+	ets:delete(?SERVER, Event),
+	{Pids, State};
 
-handle_cast(terminate, State) ->
-	{stop, normal, State}.
+handle_unregister(Event, State, Pid) ->
+	do_leave(Event, Pid),
+	{[Pid], State}.
 
-handle_info({'EXIT', Pid, _Reason}, State) ->
-	ets:match_delete(?SERVER, {'_', Pid}),
-	{noreply, State};
+handle_death(_Pid, _Reason, State) ->
+	State.
 
-handle_info(_Info, State) ->
-	{noreply, State}.
-
+handle_pid_remove(Pid, Events, State) ->
+	lists:foreach(fun(Event) -> do_leave(Event, Pid) end, Events),
+	State.
+						   
 terminate(_Reason, _State) ->
 	ok.
-
-code_change(_OldVsn, State, _Extra) ->
-	{ok, State}.
 
 %%%===================================================================
 %%% Internal functions
@@ -94,15 +83,11 @@ code_change(_OldVsn, State, _Extra) ->
 do_join(Event, Pid) ->
 	case flower_event:is_registered(Event) of
 		true ->
-			link(Pid),
-			ets:match_delete(?SERVER, {Event, Pid}),
 			ets:insert(?SERVER, {Event, Pid}),
-			ok;
+			[Pid];
 		false ->
 			{error, invalid}
 	end.
 
 do_leave(Event, Pid) ->
-	unlink(Pid),
-	ets:match_delete(?SERVER, {Event, Pid}),
-	ok.
+	ets:match_delete(?SERVER, {Event, Pid}).
