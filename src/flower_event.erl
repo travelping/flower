@@ -8,40 +8,37 @@
 %%%-------------------------------------------------------------------
 -module(flower_event).
 
--behaviour(gen_server).
+-behaviour(regine_server).
+
 
 %% API
 -export([start_link/0]).
 -export([is_registered/1, register/1, unregister/1, terminate/1]).
 
-%% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-		 terminate/2, code_change/3]).
+%% regine_server callbacks
+-export([init/1, handle_register/4, handle_unregister/3, handle_pid_remove/3, handle_death/3, terminate/2]).
+-export([handle_call/3, handle_cast/2]).
 
 -define(SERVER, ?MODULE). 
-
--record(state, {
-		  events
-		 }).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
 start_link() ->
-	gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
-
-is_registered(Event) ->
-	gen_server:call(?SERVER, {is_registered, Event}).
+    regine_server:start_link({local, ?SERVER}, ?MODULE, []).
 
 register(Event) ->
-	gen_server:call(?SERVER, {register, Event}).
+    regine_server:register(?SERVER, self(), Event, undefined).
 
 unregister(Event) ->
-	gen_server:call(?SERVER, {unregister, Event}).
-	
+    regine_server:unregister(?SERVER, Event, undefined).
+
+is_registered(Event) ->
+	regine_server:call(?SERVER, {is_registered, Event}).
+
 terminate(Event) ->
-	gen_server:cast(?SERVER, {terminate, Event}).
+	regine_server:cast(?SERVER, {terminate, Event}).
 
 %%%===================================================================
 %%% gen_server functions
@@ -51,51 +48,52 @@ default_events() ->
 	[{datapath, join}, {datapath, leave}, {packet, in}, {flow, mod}, {flow, removed}, {port, status}, {port, stats}].
 
 init([]) ->
-    process_flag(trap_exit, true),
 	Events = lists:foldl(fun(Event, Events) -> orddict:store(Event, self(), Events) end, orddict:new(), default_events()),
-	{ok, #state{events = Events}}.
+	{ok, Events}.
 
-handle_call({register, Event}, {Pid, _Ref} = _From, #state{events = Events} = State) ->
+handle_register(Pid, Event, _Args, Events) ->
 	case orddict:is_key(Event, Events) of
 		false ->
-			link(Pid),
 			Events1 = orddict:store(Event, Pid, Events),
-			{reply, ok, State#state{events = Events1}};
+			{ok, [Pid], Events1};
 		true ->
-			{reply, {error, duplicate}, State}
-	end;
+			{error, duplicate}
+	end.
 
-handle_call({unregister, Event}, _From, #state{events = Events} = State) ->
+handle_unregister(Event, Events, _Args) ->
+	Pids = case orddict:find(Event, Events) of
+			   {ok, Pid} ->
+				   [Pid];
+					   _ ->
+				   []
+		   end,
 	Events1 = orddict:erase(Event, Events),
-	{reply, ok, State#state{events = Events1}};
+	{Pids, Events1}.
 
-handle_call({is_registered, Event}, _From, #state{events = Events} = State) ->
+handle_pid_remove(Pid, _Event, Events) ->
+	Events1 = orddict:filter(fun(Key, Value) when Value == Pid -> flower_dispatcher:delete(Key), false;
+								(_Key, _Value) -> true end,
+							 Events),
+	{noreply, Events1}.
+
+handle_death(_Pid, _Reason, Events) ->
+	Events.
+
+handle_call({is_registered, Event}, _From, Events) ->
 	Reply = orddict:is_key(Event, Events),
-	{reply, Reply, State}.
+	{reply, Reply, Events}.
 
-handle_cast({terminate, Event}, #state{events = Events} = State) ->
+handle_cast({terminate, Event}, Events) ->
 	case orddict:find(Event, Events) of
 		{ok, Pid} ->
 			gen_server:cast(Pid, {terminate, Event});
 		_ ->
 			ok
 	end,
-	{noreply, State};
-
-handle_cast(terminate, State) ->
-	{stop, normal, State}.
-
-handle_info({'EXIT', Pid, _Reason}, #state{events = Events} = State) ->
-	Events1 = orddict:filter(fun(Key, Value) when Value == Pid -> flower_dispatcher:delete(Key), false;
-								(_Key, _Value) -> true end,
-					 Events),
-	{noreply, State#state{events = Events1}}.
+	{noreply, Events}.
 
 terminate(_Reason, _State) ->
 	ok.
-
-code_change(_OldVsn, State, _Extra) ->
-	{ok, State}.
 
 %%%===================================================================
 %%% Internal functions
