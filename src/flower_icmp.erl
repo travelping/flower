@@ -1,7 +1,7 @@
 -module(flower_icmp).
 
 %% API
--export([make_icmp/6, op/1]).
+-export([make_icmp/7, op/1]).
 
 %% --------------------------------------------------------------------
 %% Include files
@@ -93,9 +93,15 @@ ip_csum(Bin) ->
 	CSum = ip_csum(Bin, 0),
 	((CSum band 16#ffff) + (CSum bsr 16)) bxor 16#ffff.
 
-make_icmp(Op, DlDst, DlSrc, NwSrc, NwDst, IPHdr) ->
+-spec ether_hdr(binary(), binary(), vlan_tci(), integer()) -> binary().
+ether_hdr(DlDst, DlSrc, undefined, EthType) ->
+	<<DlDst:?ETH_ADDR_LEN/bytes-unit:8, DlSrc:?ETH_ADDR_LEN/bytes-unit:8, EthType:16>>;
+ether_hdr(DlDst, DlSrc, {PCP, VID}, EthType) ->
+	<<DlDst:?ETH_ADDR_LEN/bytes-unit:8, DlSrc:?ETH_ADDR_LEN/bytes-unit:8, 16#8100:16, PCP:3, 0:1, VID:12, EthType:16>>.
+
+make_icmp(Op, TCI, DlDst, DlSrc, NwSrc, NwDst, IPHdr) ->
 	{Type, Code} = op(Op),
-	Ether = <<DlDst:?ETH_ADDR_LEN/bytes-unit:8, DlSrc:?ETH_ADDR_LEN/bytes-unit:8, (flower_packet:eth_type(ip)):16>>,
+	Ether = ether_hdr(DlDst, DlSrc, TCI, flower_packet:eth_type(ip)),
 
 	ICMPCSum = ip_csum(<<Type:8, Code:8, 0:16, 0:32, IPHdr/binary>>),
 	ICMP = <<Type:8, Code:8, ICMPCSum:16, 0:32, IPHdr/binary>>,

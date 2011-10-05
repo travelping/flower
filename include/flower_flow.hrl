@@ -16,6 +16,8 @@
 -define(LLC_CNTL_SNAP, 3).
 -define(SNAP_ORG_ETHERNET, 0,0,0).
 
+-type vlan_tci() :: 'undefined' | {integer(), integer()}.
+
 %% The match fields for ICMP type and code use the transport source and
 %% destination port fields, respectively. */
 -define(ICMP_TYPE, tp_src).
