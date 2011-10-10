@@ -100,16 +100,13 @@ install_flow(Sw, Match, Cookie, IdleTimeout, HardTimeout,
 	ActionsBin = flower_packet:encode_actions(Actions),
 	PktOut = flower_packet:encode_ofp_flow_mod(MatchBin, Cookie, add, IdleTimeout, HardTimeout, Priority, BufferId, none, 1, ActionsBin),
 
+	% applies Actions automatically for buffered packets (BufferId /= 16#FFFFFFFF)
 	send(Sw, flow_mod, PktOut),
 	if
-		BufferId == 16#FFFFFFFF,
+	    BufferId == 16#FFFFFFFF,
 		Packet /= none ->
-			case lists:keyfind(ofp_action_output, 1, Actions) of
-				#ofp_action_output{} = Action ->
-					send_packet(Sw, Packet, Action, InPort);
-				_ ->
-					{error, not_implemented}
-			end;
+		    % only explicitly send unbuffered packets
+			send_packet(Sw, Packet, Actions, InPort);
 		true ->
 			ok
 	end,
@@ -121,10 +118,19 @@ install_flow(Sw, Match, Cookie, IdleTimeout, HardTimeout,
 %% sends an openflow packet to a datapath
 %% @end
 %%--------------------------------------------------------------------
-send_packet(Sw, Packet, Actions, InPort) ->
-	ActionsBin = flower_packet:encode_actions(Actions),
-	PktOut = flower_packet:encode_ofp_packet_out(16#FFFFFFFF, InPort, ActionsBin, Packet),
-	send(Sw, packet_out, PktOut).
+send_packet(Sw, Packet, Actions, InPort) when is_list(Actions) ->
+    case lists:keymember(ofp_action_output, 1, Actions) of
+        true ->
+            ActionsBin = flower_packet:encode_actions(Actions),
+            PktOut = flower_packet:encode_ofp_packet_out(16#FFFFFFFF, InPort, ActionsBin, Packet),
+            send(Sw, packet_out, PktOut);
+        false ->
+            % packet is unbuffered and not forwarded -> no need to send it to
+            % the datapath
+            ok
+    end;
+send_packet(Sw, Packet, Action, InPort) ->
+    send_packet(Sw, Packet, [Action], InPort).
 
 %%--------------------------------------------------------------------
 %% @doc
