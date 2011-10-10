@@ -71,9 +71,11 @@ handle_unregister(Event, Events, _Args) ->
 	{Pids, Events1}.
 
 handle_pid_remove(Pid, _Event, Events) ->
-	Events1 = orddict:filter(fun(Key, Value) when Value == Pid -> flower_dispatcher:delete(Key), false;
-								(_Key, _Value) -> true end,
-							 Events),
+	{Events1, Keys} = orddict:fold(fun(Key, Value, {Ev, K}) when Value == Pid -> {Ev, [Key|K]};
+									  (Key, Value, {Ev, K}) -> {orddict:append(Key, Value, Ev), K}
+								   end, {orddict:new(), []}, Events),
+	%% avoid dead-lock
+	spawn(fun() -> lists:foreach(fun(Key) -> flower_dispatcher:delete(Key) end, Keys) end),
 	Events1.
 
 handle_death(_Pid, _Reason, Events) ->
