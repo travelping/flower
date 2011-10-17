@@ -4,9 +4,7 @@
 -module(lrulist).
 -author("Nick Gerakines <nick@gerakines.net>").
 
--export([new/0, new/1, get/2, peek/2, insert/3, insert/4, remove/2, purge/1, keys/1]).
-
--define(EXPIRE_RULES, [expire, slidingexpire]).
+-export([new/0, get/2, peek/2, insert/3, insert/4, remove/2, purge/1, keys/1]).
 
 %% --------------------------------------------------------------------
 %% Include files
@@ -14,134 +12,116 @@
 -include("flower_debug.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
+-record(data, {expire, lastAccess, rules, data}).
+
 %% ---
 %% Public functions
 
-%% @doc Create a new LRU container with the default size (100).
+%% @doc Create a new LRU container
 new() ->
-    new(100).
-
-%% @doc Create a new LRU container with a max size.
-new(Max) when Max > 0 -> {Max, gb_trees:empty()}.
+    {gb_trees:empty(), gb_trees:empty()}.
 
 %% @doc Fetch data from a LRU list based on a key.
-get(Key, LRUL = {Max, Tree}) ->
+get(Key, LRUL = {Tree, LRUTree}) ->
     case gb_trees:lookup(Key, Tree) of
         none -> {none, LRUL};
-        {value, Data} ->
-            case expire_rules(?EXPIRE_RULES, Key, Data) of
-                true ->
-                    NewLRUL = remove(Key, LRUL),
+        {value, #data{} = Data} ->
+	    Now = calendar:datetime_to_gregorian_seconds({date(), time()}),
+            if
+		Data#data.expire < Now ->
+		    NewLRUL = remove(Key, LRUL),
                     {none, NewLRUL};
-                false ->
-                    Now = calendar:datetime_to_gregorian_seconds({date(), time()}),
-                    UpdatedTree = gb_trees:enter(Key, lists:keystore(lastAccess, 1, Data, {lastAccess, Now}), Tree),
-                    {{ok, proplists:get_value(value, Data)}, {Max, UpdatedTree}}
+                true ->
+		    NewData = update_lastAccess(Data, Now),
+                    UpdatedTree = gb_trees:enter(Key, NewData, Tree),
+		    UpdateLRUTree = update_lru(Key, Data#data.expire, NewData#data.expire, LRUTree),
+                    {{ok, Data#data.data}, {UpdatedTree, UpdateLRUTree}}
             end
     end.
 
 %% @doc Fetch data from a LRU list based on a key, don't update lastAccess
-peek(Key, LRUL = {Max, Tree}) ->
+peek(Key, LRUL = {Tree, _}) ->
     case gb_trees:lookup(Key, Tree) of
         none -> {none, LRUL};
-        {value, Data} ->
-            case expire_rules(?EXPIRE_RULES, Key, Data) of
-                true ->
+        {value, #data{} = Data} ->
+	    Now = calendar:datetime_to_gregorian_seconds({date(), time()}),
+            if
+		Data#data.expire < Now ->
                     NewLRUL = remove(Key, LRUL),
                     {none, NewLRUL};
-                false ->
-                    {{ok, proplists:get_value(value, Data)}, {Max, Tree}}
+                true ->
+                    {{ok, Data#data.data}, LRUL}
             end
     end.
 
 %% This is the same as insert(Key, Value, LRUContainer, []).
-insert(Key, Value, {Max, Tree}) ->
-    insert(Key, Value, {Max, Tree}, []).
+insert(Key, Value, LRUL) ->
+    insert(Key, Value, LRUL, []).
 
 %% @doc Insert a new value into the container.
 %% @todo document options.
-insert(Key, Value, {Max, Tree}, Options) ->
-	Now = calendar:datetime_to_gregorian_seconds({date(), time()}),
-    PropList = lists:flatten([{lastAccess, Now},{value, Value}|Options]),
-    NewTree = gb_trees:enter(Key, PropList, Tree),
-    {Max, NewTree2} = case [Max > 0, gb_trees:size(Tree) > Max] of
-        [true, true] -> purge({Max, NewTree});
-        _ -> {Max, NewTree}
-    end,
-    {ok, {Max, NewTree2}}.
+insert(Key, Value, {Tree, LRUTree}, Options) ->
+    Now = calendar:datetime_to_gregorian_seconds({date(), time()}),
+    Data0 = init_data(Options, Now),
+    Data1 = Data0#data{data = Value},
+    NewTree = gb_trees:enter(Key, Data1, Tree),
+    NewLRUTree = enter_lru(Key, Data1#data.expire, LRUTree),
+    {ok, {NewTree, NewLRUTree}}.
 
 %% @doc Remove an item from the container.
 %% @todo Check for edge cases.
-remove(Key, {Max, Tree}) ->
-    NewTree = gb_trees:delete_any(Key, Tree),
-    {Max, NewTree}.
+remove(Key, {Tree, LRUTree}) ->
+    {NewTree, NewLRUTree} = case gb_trees:lookup(Key, Tree) of
+				none ->
+				    {Tree, LRUTree};
+				{value, #data{} = Data} ->
+				    NewTree1 = gb_trees:delete(Key, Tree),
+				    NewLRUTree1 = delete_lru(Key, Data#data.expire, LRUTree),
+				    {NewTree1, NewLRUTree1}
+			    end,
+    {NewTree, NewLRUTree}.
 
 %% @doc Attempt to purge expired and bloating items from the LRU container.
-%% @todo Add Max vs Max * .75 checks
-%% @todo Document the Max * .75 rule
-purge({Max, Tree}) ->
-    NewTree = purge_rules(expire, Tree, Max),
+purge(LRUL = {_, LRUTree}) ->
+    Now = calendar:datetime_to_gregorian_seconds({date(), time()}),
+    {NewTree, NewLRUTree} = purge_run(Now, purge_next(LRUTree), LRUL),
     BalancedTree = gb_trees:balance(NewTree),
-    {Max, BalancedTree}.
+    BalancedLRUTree = gb_trees:balance(NewLRUTree),
+    {BalancedTree, BalancedLRUTree}.
 
-keys({_Max, Tree}) ->
+keys({Tree, _LRUTree}) ->
     gb_trees:keys(Tree).
 
 %% ---
 %% Private functions
 
-expire_rules([], _Key, _LRU) -> false;
-%% Rule 'expire' -- If an 'absoluteExpire' key/value tuple is set as an
-%% option when creating the item via insert/4, this rule will remove items
-%% that have a hard expiration time.
-expire_rules([expire | Rules], Key, Data ) ->
-    Now = calendar:datetime_to_gregorian_seconds({date(), time()}),
-    case proplists:get_value(absoluteExpire, Data, Now) < Now of
-        true -> true;
-        false -> expire_rules(Rules, Key, Data)
-    end;
-%% Rule 'slidingexpire' -- If a 'slidingExpire' key/value tuple is set as an
-%% option when creating the item via insert/4, this rule will remove keys
-%% based on a relative lifespan set by that tuple based on when it was last
-%% accessed. In other words this expiration rule is used to expire items
-%% based on when they are read from the first time.
-expire_rules([slidingexpire | Rules], Key, Data) ->
-    Now = calendar:datetime_to_gregorian_seconds({date(), time()}),
-    case [proplists:get_value(lastAccess, Data), proplists:get_value(slidingexpire, Data)] of
-        [undefined, _] -> expire_rules(Rules, Key, Data);
-        [_, undefined] -> expire_rules(Rules, Key, Data);
-        [LastAccess, SlidingExpire] ->
-            case LastAccess + SlidingExpire < Now of
-                true -> true;
-                false -> expire_rules(Rules, Key, Data)
-            end
+%% get next exntry to expire
+purge_next(LRUTree) ->
+    case gb_trees:is_empty(LRUTree) of
+	true ->
+	    none;
+	_ ->
+	    gb_trees:smallest(LRUTree)
     end.
 
-%% Purge rule 'expire' -- This is the purge_* equiv of the 'expire' expire
-%% rule above.
-purge_rules(expire, Tree, _Max) ->
-    Iter = gb_trees:iterator(Tree),
-    Keys = expire_iter(gb_trees:next(Iter), []),
-    lists:foldl(
-        fun(Key, TmpTree) ->
-            gb_trees:delete_any(Key, TmpTree)
-        end,
-        Tree,
-        Keys
-    ).
-
-%% This funciton takes advantage of the gb_trees:iterator/1 and
-%% gb_trees:next/1 functions to quickly iterate through a tree without
-%% having to do heavy break-down and build-up operations on the internal
-%% tree.
-expire_iter(none, Acc) -> Acc;
-expire_iter({Key, Value, Iter}, Acc) ->
-	?DEBUG("Key: ~p, Value: ~p~n", [Key, Value]),
-    NewAcc = case expire_rules(?EXPIRE_RULES, Key, Value) of
-        true -> [Key | Acc];
-        false -> Acc
-    end,
-    expire_iter(gb_trees:next(Iter), NewAcc).
+%% go over the LRUTree until the 1st non expired entry
+%%
+%%@REMARK:
+%% we could use a iterator here, but a iterator is basicly
+%% a linerized form of the full tree, someone needs to 
+%% convince me that this is actually faster than doing
+%% a few lookups...
+%% or in other works, for n > 100000 and x < 20 is
+%% amortized x * O(log n) worse than O(n)
+purge_run(_, none, LRUL) ->
+	LRUL;
+purge_run(Now, {Expire, _}, LRUL)
+  when Expire >= Now ->
+	LRUL;
+purge_run(Now, {Expire, Keys}, {Tree, LRUTree}) ->
+	NewTree = lists:foldl(fun(Key, ATree) -> gb_trees:delete(Key, ATree) end, Tree, Keys),
+	NewLRUTree = gb_trees:delete(Expire, LRUTree),
+	purge_run(Now, purge_next(NewLRUTree), {NewTree, NewLRUTree}).
 
 %% ---
 %% Test Functions
@@ -162,18 +142,84 @@ basic_test_() ->
         end
     }.
 
-%% purge_test_ -- Do some writes and reads while tripping the Max of a lru
+%% purge_test_ -- Do some writes and reads on a
 %% container.
 purge_test_() ->
-    fun() ->
+    {timeout, 20,
+     fun() ->
         LRUList = lists:foldl(
             fun(User, Tmplru) ->
-                {ok, Tmplru2} = lrulist:insert(User, User, Tmplru),
+                {ok, Tmplru2} = lrulist:insert(User, User, Tmplru, [{slidingexpire, 5}]),
                 {{ok, User}, Tmplru3} = lrulist:get(User, Tmplru2),
                 Tmplru3
             end,
-            lrulist:new(15),
+            lrulist:new(),
             [lists:concat(["user", X]) || X <- lists:seq(1, 20)]
-        ),
-        [lists:concat(["user", X]) || X <- lists:seq(1, 15)] == lrulist:keys(LRUList)
+	),
+
+        %% wait 10 sec
+	timer:sleep(10000),
+	LRUList1 = purge(LRUList),
+	[] == lrulist:keys(LRUList1)
+    end}.
+
+-spec gb_trees_update_fun(Key, Fun, Tree1) -> Tree2 when
+      Key :: term(),
+      Fun :: fun(),
+      Tree1 :: gb_tree(),
+      Tree2 :: gb_tree().
+
+%% derived from stdlib/gb_trees.erl
+
+gb_trees_update_fun(Key, Fun, {S, T}) ->
+    T1 = gb_trees_update_1(Key, Fun, T),
+    {S, T1}.
+gb_trees_update_1(Key, Fun, {Key1, V, Smaller, Bigger}) when Key < Key1 -> 
+    {Key1, V, gb_trees_update_1(Key, Fun, Smaller), Bigger};
+gb_trees_update_1(Key, Fun, {Key1, V, Smaller, Bigger}) when Key > Key1 ->
+    {Key1, V, Smaller, gb_trees_update_1(Key, Fun, Bigger)};
+gb_trees_update_1(Key, Fun, {_, V, Smaller, Bigger}) ->
+    {Key, Fun(V), Smaller, Bigger}.
+
+calc_expire({Absolute, Sliding}, Now)
+  when Absolute /= undefined,
+       Sliding /= undefined ->
+    if
+	Absolute < Now + Sliding ->
+	    Absolute;
+	true -> Now + Sliding
+    end;
+calc_expire({_Absolute, Sliding}, Now)
+  when Sliding /= undefined ->
+    Now + Sliding;
+calc_expire({Absolute, _Sliding}, _)
+  when Absolute /= undefined ->
+    Absolute;
+calc_expire({_Absolute, _Sliding}, _) ->
+    never.
+
+init_data(Options, Now) ->
+    Sliding = proplists:get_value(slidingexpire, Options),
+    Absolute = proplists:get_value(absoluteExpire, Options),
+    Rules = {Absolute, Sliding},
+    #data{expire = calc_expire(Rules, Now), lastAccess = Now, rules = Rules}.
+
+update_lastAccess(Data = #data{rules = Rules}, Now) ->
+    Data#data{expire = calc_expire(Rules, Now), lastAccess = Now}.
+	
+update_lru(_, ATime, ATime, LRUTree) ->
+    LRUTree;
+update_lru(Key, OldATime, NewATime, LRUTree) ->
+    LRUTree1 = delete_lru(Key, OldATime, LRUTree),
+    enter_lru(Key, NewATime, LRUTree1).
+
+delete_lru(Key, ATime, LRUTree) ->
+    gb_trees_update_fun(ATime, fun(List) -> lists:delete(Key, List) end, LRUTree).
+
+enter_lru(Key, ATime, LRUTree) ->
+    case gb_trees:is_defined(ATime, LRUTree) of
+        true ->
+	    gb_trees_update_fun(ATime, fun(List) -> [Key|List] end, LRUTree);
+	false ->
+            gb_trees:insert(ATime, [Key], LRUTree)
     end.

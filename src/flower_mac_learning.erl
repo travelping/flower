@@ -76,7 +76,7 @@ eth_addr_is_reserved(_Addr) ->
 %%--------------------------------------------------------------------
 init([]) ->
 	process_flag(trap_exit, true),
-	LRU = lrulist:new(65536),
+	LRU = lrulist:new(),
 	{ok, Timer} = timer:apply_interval(1000, ?MODULE, expire, []),
 	{ok, #state{timer = Timer, lru = LRU}}.
 
