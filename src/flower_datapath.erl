@@ -15,6 +15,7 @@
 %% --------------------------------------------------------------------
 -include("flower_debug.hrl").
 -include("flower_packet.hrl").
+-include("flower_datapath.hrl").
 
 %% API
 -export([start_link/0]).
@@ -25,6 +26,7 @@
 		 handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
 -export([setup/2, open/2, connecting/2, connected/2, connected/3]).
 -export([install_flow/10, send_packet/4, send_buffer/4, send_packet/5, portinfo/2]).
+-export([counters/0, counters/1]).
 
 -define(SERVER, ?MODULE).
 
@@ -32,8 +34,10 @@
 		  xid = 1,
 		  socket,
 		  pending = <<>>,
-		  features
+		  features,
+		  counters = #flower_datapath_counters{} :: #flower_datapath_counters{}
 		 }).
+
 
 -define(STARTUP_TIMEOUT, 10000).     %% wait 10sec for someone to tell us what to do
 -define(CONNECT_TIMEOUT, 30000).     %% wait 30sec for the first packet to arrive
@@ -80,6 +84,12 @@ send(Sw, Type, Msg) ->
 
 send(Sw, Type, Xid, Msg) ->
 	gen_fsm:send_event(Sw, {send, Type, Xid, Msg}).
+
+counters() ->
+	lists:map(fun(Sw) -> counters(Sw) end, flower_datapath_sup:datapaths()).
+
+counters(Sw) ->
+	gen_fsm:sync_send_all_state_event(Sw, counters).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -311,6 +321,9 @@ handle_event(_Event, StateName, State) ->
 %%                   {stop, Reason, Reply, NewState}
 %% @end
 %%--------------------------------------------------------------------
+handle_sync_event(counters, _From, StateName, State = #state{counters = Counters}) ->
+	{reply, Counters, StateName, State};
+
 handle_sync_event(_Event, _From, StateName, State) ->
 	Reply = ok,
 	{reply, Reply, StateName, State}.
@@ -331,7 +344,8 @@ handle_sync_event(_Event, _From, StateName, State) ->
 handle_info({tcp, Socket, Data}, StateName, #state{socket = Socket} = State) ->
 	?DEBUG("handle_info: ~p~n", [Data]),
 	{Msg, DataRest} = flower_packet:decode(<<(State#state.pending)/binary, Data/binary>>),
-	State1 = State#state{pending = DataRest},
+	State0 = inc_counter(State, recv, raw_packets),
+	State1 = State0#state{pending = DataRest},
 	?DEBUG("handle_info: decoded: ~p~nrest: ~p~n", [Msg, DataRest]),
 
 	case Msg of
@@ -341,7 +355,7 @@ handle_info({tcp, Socket, Data}, StateName, #state{socket = Socket} = State) ->
 
 		[First|Next] ->
 			%% exec first Msg directly....
-			Reply = ?MODULE:StateName({First#ovs_msg.type, First#ovs_msg.xid, First#ovs_msg.msg}, State1),
+			Reply = exec_sync(First, StateName, State1),
 			case Reply of
 				{next_state, _, _} ->
 					ok = inet:setopts(Socket, [{active, once}]);
@@ -352,9 +366,9 @@ handle_info({tcp, Socket, Data}, StateName, #state{socket = Socket} = State) ->
 			end,
 
 			%% push any other message into our MailBox....
-			lists:foldl(fun(M, _) -> gen_fsm:send_event(self(), {M#ovs_msg.type, M#ovs_msg.xid, M#ovs_msg.msg}) end, ok, Next),
-
-			Reply
+			%%  - extract Reply's NextState directly...
+			NextState = lists:foldl(fun(M, StateX) -> exec_async(M, StateX) end, element(3, Reply), Next),
+			setelement(3, Reply, NextState)
 	end;
 
 handle_info({tcp_closed, Socket}, _StateName, #state{socket = Socket} = State) ->
@@ -399,14 +413,25 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
+exec_sync(#ovs_msg{type = Type, xid = Xid, msg = Msg}, StateName, State) ->
+	State0 = inc_counter(State, recv, Type),
+	?MODULE:StateName({Type, Xid, Msg}, State0).
+
+exec_async(#ovs_msg{type = Type, xid = Xid, msg = Msg}, State) ->
+	State0 = inc_counter(State, recv, Type),
+	gen_fsm:send_event(self(), {Type, Xid, Msg}),
+	State0.
+
 inc_xid(State) ->
 	State#state{xid = State#state.xid + 1}.
 	
 send_hello(State) ->
-	NewState = inc_xid(State),
+	State0 = inc_counter(State, send, hello),
+	State1 = inc_counter(State0, send, raw_packets),
+	NewState = inc_xid(State1),
 	Packet = flower_packet:encode(#ovs_msg{version = 1, type = hello, xid = NewState#state.xid, msg = <<>>}),
 
-	case gen_tcp:send(State#state.socket, Packet) of
+	case gen_tcp:send(State0#state.socket, Packet) of
 		ok ->
 			{ok, NewState};
 		{error, Reason} ->
@@ -420,16 +445,53 @@ send_request(Type, Msg, NextStateInfo) ->
 	send_pkt(Type, NewState#state.xid, Msg, NewNextStateInfo).
 
 send_pkt(Type, Xid, Msg, NextStateInfo) ->
-	State = element(3, NextStateInfo),
-	Socket = State#state.socket,
+	State0 = element(3, NextStateInfo),
+	State1 = inc_counter(State0, send, raw_packets),
+	NewState = inc_counter(State1, send, Type),
+	Socket = NewState#state.socket,
 
 	Packet = flower_packet:encode(#ovs_msg{version = 1, type = Type, xid = Xid, msg = Msg}),
 
 	case gen_tcp:send(Socket, Packet) of
 		ok ->
 			ok = inet:setopts(Socket, [{active, once}]),
-			NextStateInfo;
+			setelement(3, NextStateInfo, NewState);
 		{error, Reason} ->
 			?DEBUG("error - Reason: ~p~n", [Reason]),
-			{stop, Reason, State}
+			{stop, Reason, NewState}
 	end.
+
+%%
+%% counter wrapper
+%%
+
+-define(INC_COUNTER(Field), do_inc_counter(Counter, Field) -> Counter#flower_datapath_counter{Field = Counter#flower_datapath_counter.Field + 1}).
+?INC_COUNTER(raw_packets);
+?INC_COUNTER(hello);
+?INC_COUNTER(error);
+?INC_COUNTER(echo_request);
+?INC_COUNTER(echo_reply);
+?INC_COUNTER(vendor);
+?INC_COUNTER(features_request);
+?INC_COUNTER(features_reply);
+?INC_COUNTER(get_config_request);
+?INC_COUNTER(get_config_reply);
+?INC_COUNTER(set_config);
+?INC_COUNTER(packet_in);
+?INC_COUNTER(flow_removed);
+?INC_COUNTER(port_status);
+?INC_COUNTER(packet_out);
+?INC_COUNTER(flow_mod);
+?INC_COUNTER(port_mod);
+?INC_COUNTER(stats_request);
+?INC_COUNTER(stats_reply);
+?INC_COUNTER(barrier_request);
+?INC_COUNTER(barrier_reply);
+?INC_COUNTER(queue_get_config_request);
+?INC_COUNTER(queue_get_config_reply);
+do_inc_counter(Counter, _) -> Counter#flower_datapath_counter{unknown = Counter#flower_datapath_counter.unknown + 1}.
+	
+inc_counter(State = #state{counters = Counters}, send, Field) ->
+	State#state{counters = Counters#flower_datapath_counters{send = do_inc_counter(Counters#flower_datapath_counters.send, Field)}};
+inc_counter(State = #state{counters = Counters}, recv, Field) ->
+	State#state{counters = Counters#flower_datapath_counters{recv = do_inc_counter(Counters#flower_datapath_counters.recv, Field)}}.

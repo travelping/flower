@@ -4,7 +4,7 @@
 
 %% API
 -export([start_link/0]).
--export([start_connection/0]).
+-export([start_connection/0, datapaths/0]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -18,6 +18,9 @@ start_link() ->
 
 start_connection() ->
 	supervisor:start_child(?MODULE, []).
+
+datapaths() ->
+	lists:map(fun({_, Child, _, _}) -> Child end, supervisor:which_children(?MODULE)).
 
 %% ===================================================================
 %% Supervisor callbacks
