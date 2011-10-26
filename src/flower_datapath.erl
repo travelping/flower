@@ -69,7 +69,7 @@ start_link() ->
 	gen_fsm:start_link(?MODULE, [], [?FSM_OPTS]).
 
 start_connection() ->
-	flower_datapath_sup:start_connection(?MODULE).
+	flower_datapath_sup:start_connection().
 
 accept(Server, Socket) ->
     gen_tcp:controlling_process(Socket, Server),

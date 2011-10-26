@@ -29,6 +29,7 @@ init([]) ->
 								 ?CHILD(flower_dispatcher, worker),
 								 ?CHILD(flower_mac_learning, worker),
 								 ?CHILD(flower_component_sup, supervisor),
-								 ?CHILD(flower_datapath_sup, supervisor)
+								 ?CHILD(flower_datapath_sup, supervisor),
+								 ?CHILD(flower_tcp_socket, worker)
 								]} }.
 
