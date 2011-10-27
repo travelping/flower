@@ -60,7 +60,7 @@ handle_register(Pid, Event, _Args, Events) ->
 			{error, duplicate}
 	end.
 
-handle_unregister(Event, Events, _Args) ->
+handle_unregister(Event, _Args, Events) ->
 	Pids = case orddict:find(Event, Events) of
 			   {ok, Pid} ->
 				   [Pid];

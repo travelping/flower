@@ -57,12 +57,12 @@ handle_register(Pid, Event, Pid, State) ->
 	Reply = do_join(Event, Pid),
 	{ok, Reply, State}.
 
-handle_unregister(Event, State, all) ->
+handle_unregister(Event, all, State) ->
 	Pids = ets:lookup_element(?SERVER, Event, 2),
 	ets:delete(?SERVER, Event),
 	{Pids, State};
 
-handle_unregister(Event, State, Pid) ->
+handle_unregister(Event, Pid, State) ->
 	do_leave(Event, Pid),
 	{[Pid], State}.
 
