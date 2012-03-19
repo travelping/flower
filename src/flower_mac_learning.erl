@@ -1,11 +1,23 @@
-%%%-------------------------------------------------------------------
-%%% @author Andreas Schultz <aschultz@tpip.net>
-%%% @copyright (C) 2011, Andreas Schultz
-%%% @doc
-%%%
-%%% @end
-%%% Created : 30 Jun 2011 by Andreas Schultz <aschultz@tpip.net>
-%%%-------------------------------------------------------------------
+%% Copyright 2010-2012, Travelping GmbH <info@travelping.com>
+
+%% Permission is hereby granted, free of charge, to any person obtaining a
+%% copy of this software and associated documentation files (the "Software"),
+%% to deal in the Software without restriction, including without limitation
+%% the rights to use, copy, modify, merge, publish, distribute, sublicense,
+%% and/or sell copies of the Software, and to permit persons to whom the
+%% Software is furnished to do so, subject to the following conditions:
+
+%% The above copyright notice and this permission notice shall be included in
+%% all copies or substantial portions of the Software.
+
+%% THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+%% IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+%% FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+%% AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+%% LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+%% FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+%% DEALINGS IN THE SOFTWARE.
+
 -module(flower_mac_learning).
 
 -behaviour(gen_server).
@@ -15,15 +27,15 @@
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-		 terminate/2, code_change/3]).
+	 terminate/2, code_change/3]).
 
 -define(SERVER, ?MODULE). 
 -define(MAC_ENTRY_IDLE_TIME, 60).
 
 -record(state, {
-		  timer,
-		  lru
-		 }).
+	  timer,
+	  lru
+	 }).
 
 %%%===================================================================
 %%% API
@@ -37,7 +49,7 @@
 %% @end
 %%--------------------------------------------------------------------
 start_link() ->
-	gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 insert(MAC, VLan, Port) ->
     gen_server:call(?SERVER, {insert, MAC, VLan, Port}).
@@ -49,14 +61,14 @@ expire() ->
     gen_server:cast(?SERVER, expire).
 
 may_learn(<<_:7, BCast:1, _/binary>> = _MAC, _VLan) ->
-	(BCast =/= 1).
-	
+    (BCast =/= 1).
+
 %% Returns true if it is a reserved multicast address, that a bridge must
 %% never forward, false otherwise.
 eth_addr_is_reserved(<<16#01, 16#80, 16#C2, 16#00, 16#00, 0:4, _:4>>) ->
-	true;
+    true;
 eth_addr_is_reserved(_Addr) ->
-	false.
+    false.
 
 
 %%%===================================================================
@@ -75,10 +87,10 @@ eth_addr_is_reserved(_Addr) ->
 %% @end
 %%--------------------------------------------------------------------
 init([]) ->
-	process_flag(trap_exit, true),
-	LRU = lrulist:new(),
-	{ok, Timer} = timer:apply_interval(1000, ?MODULE, expire, []),
-	{ok, #state{timer = Timer, lru = LRU}}.
+    process_flag(trap_exit, true),
+    LRU = lrulist:new(),
+    {ok, Timer} = timer:apply_interval(1000, ?MODULE, expire, []),
+    {ok, #state{timer = Timer, lru = LRU}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -95,24 +107,24 @@ init([]) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_call({insert, MAC, VLan, Port}, _From, #state{lru = LRU} = State) ->
-	{Result, LRU0} =  lrulist:get({MAC, VLan}, LRU),
-	{Reply, LRU1} = case Result of
-						none ->
-							{ok, NewLRU} = lrulist:insert({MAC, VLan}, Port, LRU0, [{slidingexpire, ?MAC_ENTRY_IDLE_TIME}]),
-							{new, NewLRU};
-						{ok, Data} ->
-							if (Data =/= Port) ->
-									{ok, NewLRU} = lrulist:insert({MAC, VLan}, Port, LRU0, [{slidingexpire, ?MAC_ENTRY_IDLE_TIME}]),
-									{updated, NewLRU};
-							   true ->
-									{ok, LRU0}
-							end
-					end,
-	{reply, Reply, State#state{lru = LRU1}};
+    {Result, LRU0} =  lrulist:get({MAC, VLan}, LRU),
+    {Reply, LRU1} = case Result of
+			none ->
+			    {ok, NewLRU} = lrulist:insert({MAC, VLan}, Port, LRU0, [{slidingexpire, ?MAC_ENTRY_IDLE_TIME}]),
+			    {new, NewLRU};
+			{ok, Data} ->
+			    if (Data =/= Port) ->
+				    {ok, NewLRU} = lrulist:insert({MAC, VLan}, Port, LRU0, [{slidingexpire, ?MAC_ENTRY_IDLE_TIME}]),
+				    {updated, NewLRU};
+			       true ->
+				    {ok, LRU0}
+			    end
+		    end,
+    {reply, Reply, State#state{lru = LRU1}};
 
 handle_call({lookup, MAC, VLan}, _From, #state{lru = LRU} = State) ->
-	{Result, LRU0} =  lrulist:peek({MAC, VLan}, LRU),
-	{reply, Result, State#state{lru = LRU0}}.
+    {Result, LRU0} =  lrulist:peek({MAC, VLan}, LRU),
+    {reply, Result, State#state{lru = LRU0}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -125,8 +137,8 @@ handle_call({lookup, MAC, VLan}, _From, #state{lru = LRU} = State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_cast(expire, #state{lru = LRU} = State) ->
-	LRU0 = lrulist:purge(LRU),
-	{noreply, State#state{lru = LRU0}}.
+    LRU0 = lrulist:purge(LRU),
+    {noreply, State#state{lru = LRU0}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -139,7 +151,7 @@ handle_cast(expire, #state{lru = LRU} = State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_info(_Info, State) ->
-	{noreply, State}.
+    {noreply, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -153,7 +165,7 @@ handle_info(_Info, State) ->
 %% @end
 %%--------------------------------------------------------------------
 terminate(_Reason, _State) ->
-	ok.
+    ok.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -164,7 +176,7 @@ terminate(_Reason, _State) ->
 %% @end
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
-	{ok, State}.
+    {ok, State}.
 
 %%%===================================================================
 %%% Internal functions

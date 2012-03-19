@@ -1,3 +1,23 @@
+%% Copyright 2010-2012, Travelping GmbH <info@travelping.com>
+
+%% Permission is hereby granted, free of charge, to any person obtaining a
+%% copy of this software and associated documentation files (the "Software"),
+%% to deal in the Software without restriction, including without limitation
+%% the rights to use, copy, modify, merge, publish, distribute, sublicense,
+%% and/or sell copies of the Software, and to permit persons to whom the
+%% Software is furnished to do so, subject to the following conditions:
+
+%% The above copyright notice and this permission notice shall be included in
+%% all copies or substantial portions of the Software.
+
+%% THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+%% IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+%% FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+%% AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+%% LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+%% FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+%% DEALINGS IN THE SOFTWARE.
+
 -module(flower_icmp).
 
 %% API
@@ -16,16 +36,16 @@
 %% @end
 %%--------------------------------------------------------------------
 
-op(echoreply)						-> {0, 0};
-op(source_quench)					-> {4, 0};
-op(echo)							-> {8, 0};
-op(parameterprob)					-> {12, 0};
-op(timestamp)						-> {13, 0};
-op(timestampreply)					-> {14, 0};
-op(info_request)					-> {15, 0};
-op(info_reply)						-> {16, 0};
-op(address)							-> {17, 0};
-op(addressreply)					-> {18, 0};
+op(echoreply)				-> {0, 0};
+op(source_quench)			-> {4, 0};
+op(echo)				-> {8, 0};
+op(parameterprob)			-> {12, 0};
+op(timestamp)				-> {13, 0};
+op(timestampreply)			-> {14, 0};
+op(info_request)			-> {15, 0};
+op(info_reply)				-> {16, 0};
+op(address)				-> {17, 0};
+op(addressreply)			-> {18, 0};
 op({dest_unreach, net_unreach})		-> {3, 0};
 op({dest_unreach, host_unreach})	-> {3, 1};
 op({dest_unreach, prot_unreach})	-> {3, 2};
@@ -35,15 +55,15 @@ op({dest_unreach, sr_failed})		-> {3, 5};
 op({dest_unreach, net_unknown})		-> {3, 6};
 op({dest_unreach, host_unknown})	-> {3, 7};
 op({dest_unreach, host_isolated})	-> {3, 8};
-op({dest_unreach, net_ano})			-> {3, 9};
+op({dest_unreach, net_ano})		-> {3, 9};
 op({dest_unreach, host_ano})		-> {3, 10};
 op({dest_unreach, net_unr_tos})		-> {3, 11};
 op({dest_unreach, host_unr_tos})	-> {3, 12};
 op({dest_unreach, pkt_filtered})	-> {3, 13};
 op({dest_unreach, prec_violation})	-> {3, 14};
 op({dest_unreach, prec_cutoff})		-> {3, 15};
-op({redirect, redir_net})			-> {5, 0};
-op({redirect, redir_host})			-> {5, 1};
+op({redirect, redir_net})		-> {5, 0};
+op({redirect, redir_host})		-> {5, 1};
 op({redirect, redir_nettos})		-> {5, 2};
 op({redirect, redir_hosttos})		-> {5, 3};
 op({time_exceeded, exc_ttl})		-> {11, 0};
@@ -83,36 +103,36 @@ op({17, 0})	-> address;
 op({18, 0})	-> addressreply.
 
 ip_csum(<<>>, CSum) ->
-	CSum;
+    CSum;
 ip_csum(<<Head:8/integer>>, CSum) ->
-	CSum + Head * 256;
+    CSum + Head * 256;
 ip_csum(<<Head:16/integer, Tail/binary>>, CSum) ->
-	ip_csum(Tail, CSum + Head).
+    ip_csum(Tail, CSum + Head).
 
 ip_csum(Bin) ->
-	CSum = ip_csum(Bin, 0),
-	((CSum band 16#ffff) + (CSum bsr 16)) bxor 16#ffff.
+    CSum = ip_csum(Bin, 0),
+    ((CSum band 16#ffff) + (CSum bsr 16)) bxor 16#ffff.
 
 -spec ether_hdr(binary(), binary(), vlan_tci(), integer()) -> binary().
 ether_hdr(DlDst, DlSrc, undefined, EthType) ->
-	<<DlDst:?ETH_ADDR_LEN/bytes-unit:8, DlSrc:?ETH_ADDR_LEN/bytes-unit:8, EthType:16>>;
+    <<DlDst:?ETH_ADDR_LEN/bytes-unit:8, DlSrc:?ETH_ADDR_LEN/bytes-unit:8, EthType:16>>;
 ether_hdr(DlDst, DlSrc, {PCP, VID}, EthType) ->
-	<<DlDst:?ETH_ADDR_LEN/bytes-unit:8, DlSrc:?ETH_ADDR_LEN/bytes-unit:8, 16#8100:16, PCP:3, 0:1, VID:12, EthType:16>>.
+    <<DlDst:?ETH_ADDR_LEN/bytes-unit:8, DlSrc:?ETH_ADDR_LEN/bytes-unit:8, 16#8100:16, PCP:3, 0:1, VID:12, EthType:16>>.
 
 make_icmp(Op, TCI, DlDst, DlSrc, NwSrc, NwDst, IPHdr) ->
-	{Type, Code} = op(Op),
-	Ether = ether_hdr(DlDst, DlSrc, TCI, flower_packet:eth_type(ip)),
+    {Type, Code} = op(Op),
+    Ether = ether_hdr(DlDst, DlSrc, TCI, flower_packet:eth_type(ip)),
 
-	ICMPCSum = ip_csum(<<Type:8, Code:8, 0:16, 0:32, IPHdr/binary>>),
-	ICMP = <<Type:8, Code:8, ICMPCSum:16, 0:32, IPHdr/binary>>,
+    ICMPCSum = ip_csum(<<Type:8, Code:8, 0:16, 0:32, IPHdr/binary>>),
+    ICMP = <<Type:8, Code:8, ICMPCSum:16, 0:32, IPHdr/binary>>,
 
-	TotLen = 20 + size(ICMP),
-	Id = 0,
-	Proto = gen_socket:protocol(icmp),
-	HdrCSum = ip_csum(<<4:4, 5:4, 0:8, TotLen:16,
-					   Id:16, 0:16, 64:8, Proto:8,
-					   0:16/integer, NwDst:4/bytes-unit:8, NwSrc:4/bytes-unit:8>>),
-	IP = <<4:4, 5:4, 0:8, TotLen:16,
-		   Id:16, 0:16, 64:8, Proto:8,
-		   HdrCSum:16/integer, NwDst:4/bytes-unit:8, NwSrc:4/bytes-unit:8>>,
-	list_to_binary([Ether, IP, ICMP]).	
+    TotLen = 20 + size(ICMP),
+    Id = 0,
+    Proto = gen_socket:protocol(icmp),
+    HdrCSum = ip_csum(<<4:4, 5:4, 0:8, TotLen:16,
+			Id:16, 0:16, 64:8, Proto:8,
+			0:16/integer, NwDst:4/bytes-unit:8, NwSrc:4/bytes-unit:8>>),
+    IP = <<4:4, 5:4, 0:8, TotLen:16,
+	   Id:16, 0:16, 64:8, Proto:8,
+	   HdrCSum:16/integer, NwDst:4/bytes-unit:8, NwSrc:4/bytes-unit:8>>,
+    list_to_binary([Ether, IP, ICMP]).	

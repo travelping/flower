@@ -1,6 +1,10 @@
+%%From:
+%%   git://gist.github.com/14833.git
+
 %% @doc A small LRU list container.
 %% @todo Add better documentation.
 %% @todo Find edge case bugs in purging.
+
 -module(lrulist).
 -author("Nick Gerakines <nick@gerakines.net>").
 
@@ -24,34 +28,34 @@ new() ->
 %% @doc Fetch data from a LRU list based on a key.
 get(Key, LRUL = {Tree, LRUTree}) ->
     case gb_trees:lookup(Key, Tree) of
-        none -> {none, LRUL};
-        {value, #data{} = Data} ->
+	none -> {none, LRUL};
+	{value, #data{} = Data} ->
 	    Now = calendar:datetime_to_gregorian_seconds({date(), time()}),
-            if
+	    if
 		Data#data.expire < Now ->
 		    NewLRUL = remove(Key, LRUL),
-                    {none, NewLRUL};
-                true ->
+		    {none, NewLRUL};
+		true ->
 		    NewData = update_lastAccess(Data, Now),
-                    UpdatedTree = gb_trees:enter(Key, NewData, Tree),
+		    UpdatedTree = gb_trees:enter(Key, NewData, Tree),
 		    UpdateLRUTree = update_lru(Key, Data#data.expire, NewData#data.expire, LRUTree),
-                    {{ok, Data#data.data}, {UpdatedTree, UpdateLRUTree}}
-            end
+		    {{ok, Data#data.data}, {UpdatedTree, UpdateLRUTree}}
+	    end
     end.
 
 %% @doc Fetch data from a LRU list based on a key, don't update lastAccess
 peek(Key, LRUL = {Tree, _}) ->
     case gb_trees:lookup(Key, Tree) of
-        none -> {none, LRUL};
-        {value, #data{} = Data} ->
+	none -> {none, LRUL};
+	{value, #data{} = Data} ->
 	    Now = calendar:datetime_to_gregorian_seconds({date(), time()}),
-            if
+	    if
 		Data#data.expire < Now ->
-                    NewLRUL = remove(Key, LRUL),
-                    {none, NewLRUL};
-                true ->
-                    {{ok, Data#data.data}, LRUL}
-            end
+		    NewLRUL = remove(Key, LRUL),
+		    {none, NewLRUL};
+		true ->
+		    {{ok, Data#data.data}, LRUL}
+	    end
     end.
 
 %% This is the same as insert(Key, Value, LRUContainer, []).
@@ -114,14 +118,14 @@ purge_next(LRUTree) ->
 %% or in other works, for n > 100000 and x < 20 is
 %% amortized x * O(log n) worse than O(n)
 purge_run(_, none, LRUL) ->
-	LRUL;
+    LRUL;
 purge_run(Now, {Expire, _}, LRUL)
   when Expire >= Now ->
-	LRUL;
+    LRUL;
 purge_run(Now, {Expire, Keys}, {Tree, LRUTree}) ->
-	NewTree = lists:foldl(fun(Key, ATree) -> gb_trees:delete(Key, ATree) end, Tree, Keys),
-	NewLRUTree = gb_trees:delete(Expire, LRUTree),
-	purge_run(Now, purge_next(NewLRUTree), {NewTree, NewLRUTree}).
+    NewTree = lists:foldl(fun(Key, ATree) -> gb_trees:delete(Key, ATree) end, Tree, Keys),
+    NewLRUTree = gb_trees:delete(Expire, LRUTree),
+    purge_run(Now, purge_next(NewLRUTree), {NewTree, NewLRUTree}).
 
 %% ---
 %% Test Functions
@@ -130,16 +134,16 @@ purge_run(Now, {Expire, Keys}, {Tree, LRUTree}) ->
 %% basic_test_ -- Do some basic writes and reads
 basic_test_() ->
     {
-        "Basic setting and getting.",
-        fun() ->
-            L1 = lrulist:new(),
-            {ok, L2} = lrulist:insert("starbucks", 4, L1),
-            {ok, L3} = lrulist:insert("petes", 2, L2),
-            {ok, L4} = lrulist:insert("distel", none, L3),
-            {{ok, 4}, L5} = lrulist:get("starbucks", L4),
-            {{ok, 2}, L6} = lrulist:get("petes", L5),
-            {{ok, none}, _L7} = lrulist:get("distel", L6)
-        end
+      "Basic setting and getting.",
+      fun() ->
+	      L1 = lrulist:new(),
+	      {ok, L2} = lrulist:insert("starbucks", 4, L1),
+	      {ok, L3} = lrulist:insert("petes", 2, L2),
+	      {ok, L4} = lrulist:insert("distel", none, L3),
+	      {{ok, 4}, L5} = lrulist:get("starbucks", L4),
+	      {{ok, 2}, L6} = lrulist:get("petes", L5),
+	      {{ok, none}, _L7} = lrulist:get("distel", L6)
+      end
     }.
 
 %% purge_test_ -- Do some writes and reads on a
@@ -147,21 +151,21 @@ basic_test_() ->
 purge_test_() ->
     {timeout, 20,
      fun() ->
-        LRUList = lists:foldl(
-            fun(User, Tmplru) ->
-                {ok, Tmplru2} = lrulist:insert(User, User, Tmplru, [{slidingexpire, 5}]),
-                {{ok, User}, Tmplru3} = lrulist:get(User, Tmplru2),
-                Tmplru3
-            end,
-            lrulist:new(),
-            [lists:concat(["user", X]) || X <- lists:seq(1, 20)]
-	),
+	     LRUList = lists:foldl(
+			 fun(User, Tmplru) ->
+				 {ok, Tmplru2} = lrulist:insert(User, User, Tmplru, [{slidingexpire, 5}]),
+				 {{ok, User}, Tmplru3} = lrulist:get(User, Tmplru2),
+				 Tmplru3
+			 end,
+			 lrulist:new(),
+			 [lists:concat(["user", X]) || X <- lists:seq(1, 20)]
+			),
 
-        %% wait 10 sec
-	timer:sleep(10000),
-	LRUList1 = purge(LRUList),
-	[] == lrulist:keys(LRUList1)
-    end}.
+	     %% wait 10 sec
+	     timer:sleep(10000),
+	     LRUList1 = purge(LRUList),
+	     [] == lrulist:keys(LRUList1)
+     end}.
 
 -spec gb_trees_update_fun(Key, Fun, Tree1) -> Tree2 when
       Key :: term(),
@@ -206,7 +210,7 @@ init_data(Options, Now) ->
 
 update_lastAccess(Data = #data{rules = Rules}, Now) ->
     Data#data{expire = calc_expire(Rules, Now), lastAccess = Now}.
-	
+
 update_lru(_, ATime, ATime, LRUTree) ->
     LRUTree;
 update_lru(Key, OldATime, NewATime, LRUTree) ->
@@ -218,8 +222,8 @@ delete_lru(Key, ATime, LRUTree) ->
 
 enter_lru(Key, ATime, LRUTree) ->
     case gb_trees:is_defined(ATime, LRUTree) of
-        true ->
+	true ->
 	    gb_trees_update_fun(ATime, fun(List) -> [Key|List] end, LRUTree);
 	false ->
-            gb_trees:insert(ATime, [Key], LRUTree)
+	    gb_trees:insert(ATime, [Key], LRUTree)
     end.

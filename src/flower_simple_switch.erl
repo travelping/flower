@@ -1,11 +1,23 @@
-%%%-------------------------------------------------------------------
-%%% @author Andreas Schultz <aschultz@tpip.net>
-%%% @copyright (C) 2011, Andreas Schultz
-%%% @doc
-%%%
-%%% @end
-%%% Created :  5 Jul 2011 by Andreas Schultz <aschultz@tpip.net>
-%%%-------------------------------------------------------------------
+%% Copyright 2010-2012, Travelping GmbH <info@travelping.com>
+
+%% Permission is hereby granted, free of charge, to any person obtaining a
+%% copy of this software and associated documentation files (the "Software"),
+%% to deal in the Software without restriction, including without limitation
+%% the rights to use, copy, modify, merge, publish, distribute, sublicense,
+%% and/or sell copies of the Software, and to permit persons to whom the
+%% Software is furnished to do so, subject to the following conditions:
+
+%% The above copyright notice and this permission notice shall be included in
+%% all copies or substantial portions of the Software.
+
+%% THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+%% IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+%% FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+%% AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+%% LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+%% FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+%% DEALINGS IN THE SOFTWARE.
+
 -module(flower_simple_switch).
 
 -behaviour(gen_server).
@@ -22,7 +34,7 @@
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-		 terminate/2, code_change/3]).
+	 terminate/2, code_change/3]).
 
 -define(SERVER, ?MODULE). 
 
@@ -40,7 +52,7 @@
 %% @end
 %%--------------------------------------------------------------------
 start_link() ->
-	gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -58,8 +70,8 @@ start_link() ->
 %% @end
 %%--------------------------------------------------------------------
 init([]) ->
-	flower_dispatcher:join({packet, in}),
-	{ok, #state{}}.
+    flower_dispatcher:join({packet, in}),
+    {ok, #state{}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -76,8 +88,8 @@ init([]) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_call(_Request, _From, State) ->
-	Reply = ok,
-	{reply, Reply, State}.
+    Reply = ok,
+    {reply, Reply, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -90,39 +102,39 @@ handle_call(_Request, _From, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_cast({{packet, in}, Sw, Msg}, State) ->
-	case Flow = (catch flower_flow:flow_extract(0, Msg#ofp_packet_in.in_port, Msg#ofp_packet_in.data)) of
-		#flow{tun_id = TunId, nw_src = NwSrc, nw_dst = NwDst, in_port = InPort, vlan_tci = VlanTci,
-			  dl_type = DlType, tp_src = TpSrc, tp_dst = TpDst, dl_src = DlSrc, dl_dst = DlDst,
-			  nw_proto = NwProto, nw_tos = NwTos, arp_sha = ArpSha, arp_tha = ArpTha} ->
-			%% choose destination...
-			Port = choose_destination(Flow),
-			Actions = case Port of
-						 none -> [];
-%%						 X when is_integer(X) ->
-%%							 [#ofp_action_enqueue{port = X, queue_id = 0}];
-						 X ->
-							 [#ofp_action_output{port = X, max_len = 0}]
-					 end,
-			
-			if
-				Port =:= flood ->
-					%% We don't know that MAC, or we don't set up flows.  Send along the
-					%% packet without setting up a flow.
-					flower_datapath:send_packet(Sw, Msg#ofp_packet_in.buffer_id, Msg#ofp_packet_in.data, Actions, Msg#ofp_packet_in.in_port);
-				true ->
-					%% The output port is known, so add a new flow.
-					Match = flower_match:encode_ofp_matchflow([{nw_src_mask,32}, {nw_dst_mask,32}, tp_dst, tp_src, nw_proto, dl_type], Flow),
-					?DEBUG("Match: ~p~n", [Match]),
+    case Flow = (catch flower_flow:flow_extract(0, Msg#ofp_packet_in.in_port, Msg#ofp_packet_in.data)) of
+	#flow{tun_id = TunId, nw_src = NwSrc, nw_dst = NwDst, in_port = InPort, vlan_tci = VlanTci,
+	      dl_type = DlType, tp_src = TpSrc, tp_dst = TpDst, dl_src = DlSrc, dl_dst = DlDst,
+	      nw_proto = NwProto, nw_tos = NwTos, arp_sha = ArpSha, arp_tha = ArpTha} ->
+	    %% choose destination...
+	    Port = choose_destination(Flow),
+	    Actions = case Port of
+			  none -> [];
+			  %%						 X when is_integer(X) ->
+			  %%							 [#ofp_action_enqueue{port = X, queue_id = 0}];
+			  X ->
+			      [#ofp_action_output{port = X, max_len = 0}]
+		      end,
 
-					flower_datapath:install_flow(Sw, Match, 0, 60, 0, Actions, Msg#ofp_packet_in.buffer_id, 0, Msg#ofp_packet_in.in_port, Msg#ofp_packet_in.data)
-			end;
-		_ ->
-			?DEBUG("no match: ~p~n", [Flow])
-	end,
-	{noreply, State};
+	    if
+		Port =:= flood ->
+		    %% We don't know that MAC, or we don't set up flows.  Send along the
+		    %% packet without setting up a flow.
+		    flower_datapath:send_packet(Sw, Msg#ofp_packet_in.buffer_id, Msg#ofp_packet_in.data, Actions, Msg#ofp_packet_in.in_port);
+		true ->
+		    %% The output port is known, so add a new flow.
+		    Match = flower_match:encode_ofp_matchflow([{nw_src_mask,32}, {nw_dst_mask,32}, tp_dst, tp_src, nw_proto, dl_type], Flow),
+		    ?DEBUG("Match: ~p~n", [Match]),
+
+		    flower_datapath:install_flow(Sw, Match, 0, 60, 0, Actions, Msg#ofp_packet_in.buffer_id, 0, Msg#ofp_packet_in.in_port, Msg#ofp_packet_in.data)
+	    end;
+	_ ->
+	    ?DEBUG("no match: ~p~n", [Flow])
+    end,
+    {noreply, State};
 
 handle_cast(_Msg, State) ->
-	{noreply, State}.
+    {noreply, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -135,7 +147,7 @@ handle_cast(_Msg, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_info(_Info, State) ->
-	{noreply, State}.
+    {noreply, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -149,7 +161,7 @@ handle_info(_Info, State) ->
 %% @end
 %%--------------------------------------------------------------------
 terminate(_Reason, _State) ->
-	ok.
+    ok.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -160,49 +172,49 @@ terminate(_Reason, _State) ->
 %% @end
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
-	{ok, State}.
+    {ok, State}.
 
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
 
 format_mac(<<A:8,B:8,C:8,D:8,E:8,F>>) ->
-	lists:flatten(io_lib:format("~2.16.0B:~2.16.0B:~2.16.0B:~2.16.0B:~2.16.0B:~2.16.0B", [A,B,C,D,E,F])).
+    lists:flatten(io_lib:format("~2.16.0B:~2.16.0B:~2.16.0B:~2.16.0B:~2.16.0B:~2.16.0B", [A,B,C,D,E,F])).
 
 format_ip(<<A:8,B:8,C:8,D:8>>) ->
-	lists:flatten(io_lib:format("~B.~B.~B.~B", [A,B,C,D])).
+    lists:flatten(io_lib:format("~B.~B.~B.~B", [A,B,C,D])).
 
 choose_destination(#flow{in_port = Port, dl_src = DlSrc, dl_dst = DlDst} = _Flow) ->
-	OutPort = case flower_mac_learning:eth_addr_is_reserved(DlSrc) of
-				  false -> learn_mac(DlSrc, 0, Port),
-						   find_out_port(DlDst, 0, Port);
-				  true -> none
-			  end,
-	?DEBUG("Verdict: ~p", [OutPort]),
-	OutPort.
+    OutPort = case flower_mac_learning:eth_addr_is_reserved(DlSrc) of
+		  false -> learn_mac(DlSrc, 0, Port),
+			   find_out_port(DlDst, 0, Port);
+		  true -> none
+	      end,
+    ?DEBUG("Verdict: ~p", [OutPort]),
+    OutPort.
 
 learn_mac(DlSrc, VLan, Port) ->		 
-	R = case flower_mac_learning:may_learn(DlSrc, VLan) of
-			true -> flower_mac_learning:insert(DlSrc, VLan, Port);
-			false ->
-				not_learned
-		end,
-	if
-		R =:= new; R =:= updated ->
+    R = case flower_mac_learning:may_learn(DlSrc, VLan) of
+	    true -> flower_mac_learning:insert(DlSrc, VLan, Port);
+	    false ->
+		not_learned
+	end,
+    if
+	R =:= new; R =:= updated ->
             ?DEBUG("~p: learned that ~s is on port ~w", [self(), format_mac(DlSrc), Port]),
-			ok;
-		true ->
-			ok
-	end.
+	    ok;
+	true ->
+	    ok
+    end.
 
 find_out_port(DlDst, _VLan, Port) ->
-	OutPort = case flower_mac_learning:lookup(DlDst, 0) of
-				  none -> flood;
-				  {ok, OutPort1} -> 
-					  if
-						  %% Don't send a packet back out its input port.
-						  OutPort1 =:= Port -> none;
-						  true -> OutPort1
-					  end
-			  end,
-	OutPort.
+    OutPort = case flower_mac_learning:lookup(DlDst, 0) of
+		  none -> flood;
+		  {ok, OutPort1} -> 
+		      if
+			  %% Don't send a packet back out its input port.
+			  OutPort1 =:= Port -> none;
+			  true -> OutPort1
+		      end
+	      end,
+    OutPort.
