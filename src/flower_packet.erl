@@ -50,6 +50,11 @@
 -include("flower_debug.hrl").
 -include("flower_packet.hrl").
 
+%% --------------------------------------------------------------------
+-type int8() :: 0..16#ff.
+-type int16() :: 0..16#ffff.
+-type int32() :: 0..16#ffffffff.
+
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -70,7 +75,7 @@ decode(<<Version:8/integer, Type:8/integer, Length:16/integer, Xid:32/integer,
     <<_Hdr:8/bytes, Msg:MsgLen/bytes, Rest/binary>> = Data,
     MType = ofpt(Type),
     M = decode_msg(MType, Msg),
-    ?DEBUG("deode got: ~p~n", [M]),
+    ?DEBUG("decode got: ~p~n", [M]),
     decode(Rest, [#ovs_msg{version = Version, type = MType, xid = Xid, msg = M}|Acc]);
 
 decode(Rest, Acc) ->
@@ -189,6 +194,8 @@ ofp_error_type(5) -> queue_op_failed;
 
 ofp_error_type(X) when is_integer(X) -> X.
 
+-spec ofp_error_code_type(ofp_error(), non_neg_integer()) -> atom() | 'error';
+			 (ofp_error(), atom()) -> non_neg_integer() | 'error'.
 ofp_error_code_type(hello_failed, 0) -> incompatible;
 ofp_error_code_type(hello_failed, 1) -> eperm;
 
@@ -319,8 +326,8 @@ ofp_flow_mod_command(_)	-> error.
 ofp_flow_mod_flags() ->
     [send_flow_rem, check_overlap, emerg].
 
--spec ofp_port(non_neg_integer()) -> ofp_port();
-	      (ofp_port()) -> non_neg_integer().
+-spec ofp_port(non_neg_integer()) -> ofp_port_name() | non_neg_integer();
+	      (ofp_port_name()) -> non_neg_integer().
 %% Port numbering.  Physical ports are numbered starting from 1.
 ofp_port(16#fff8) -> in_port;
 ofp_port(16#fff9) -> table;
@@ -862,50 +869,64 @@ encode_ofp_match(Wildcards, InPort, DlSrc, DlDst, DlVlan, DlVlanPcp, DlType,
     <<Wildcards:32, InPort0:16, DlSrc:6/binary, DlDst:6/binary, DlVlan:16, DlVlanPcp:8,
       0:8, DlType0:16, NwTos:8, NwProto0:8, 0:16, NwSrc0:4/binary, NwDst0:4/binary, TpSrc0:16, TpDst0:16>>.
 
+-spec encode_ofs_action(int16(), binary()) -> binary().
 encode_ofs_action(Type, Data) ->
     Len = 4 + size(Data),
     <<Type:16, Len:16, Data/binary>>.
 
+-spec encode_ofs_action_output(ofp_port(), int16()) -> binary().
 encode_ofs_action_output(Port, MaxLen) ->
     Port0 = ofp_port(Port),
     encode_ofs_action(0, <<Port0:16, MaxLen:16>>).
 
+-spec encode_ofs_action_vlan_vid(int16()) -> binary().
 encode_ofs_action_vlan_vid(VlanVid) ->
     encode_ofs_action(1, <<VlanVid:16, 0:16>>).
 
+-spec encode_ofs_action_vlan_pcp(int8()) -> binary().
 encode_ofs_action_vlan_pcp(VlanPcp) ->
     encode_ofs_action(2, <<VlanPcp:8, 0:24>>).
 
+-spec encode_ofs_action_strip_vlan() -> binary().
 encode_ofs_action_strip_vlan() ->
     encode_ofs_action(3, <<0:32>>).
 
+-spec encode_ofs_action_dl_addr(ofp_addr_type(), binary()) -> binary().
 encode_ofs_action_dl_addr(src, Addr) ->
     encode_ofs_action(4, <<Addr:6/bytes, 0:48>>);
 encode_ofs_action_dl_addr(dst, Addr) ->
     encode_ofs_action(5, <<Addr:6/bytes, 0:48>>).
 
+-spec encode_ofs_action_nw_addr(ofp_addr_type(), binary()) -> binary().
 encode_ofs_action_nw_addr(src, Addr) ->
     encode_ofs_action(6, <<Addr:4/bytes>>);
 encode_ofs_action_nw_addr(dst, Addr) ->
     encode_ofs_action(7, <<Addr:4/bytes>>).
 
+-spec encode_ofs_action_nw_tos(int8()) -> binary().
 encode_ofs_action_nw_tos(NwTos) ->
     encode_ofs_action(8, <<NwTos:8, 0:24>>).
 
+-spec encode_ofs_action_tp_addr(ofp_addr_type(), int16()) -> binary().
 encode_ofs_action_tp_addr(src, TpPort) ->
     encode_ofs_action(9, <<TpPort:16, 0:16>>);
 encode_ofs_action_tp_addr(dst, TpPort) ->
     encode_ofs_action(10, <<TpPort:16, 0:16>>).
 
+-spec encode_ofs_action_enqueue(ofp_port(), int32()) -> binary().
 encode_ofs_action_enqueue(Port, QueueId) ->
     Port0 = ofp_port(Port),
     encode_ofs_action(11, <<Port0:16, 0:48, QueueId:32>>).
 
+-spec encode_ofs_action_vendor(int32(), binary()) -> binary().
 encode_ofs_action_vendor(Vendor, Msg) ->
     Data = pad_to(8, Msg),
     encode_ofs_action(16#FFFF, <<Vendor:32, Data/binary>>).
 
--spec encode_ofp_flow_mod(binary(), integer(), integer(), integer(), integer(), integer(), integer(), integer()|atom(), integer(), binary()|list(binary)) -> binary().
+-spec encode_ofp_flow_mod(Match :: binary(), Cookie :: integer(), Command :: ofp_command() | non_neg_integer(),
+			  IdleTimeout :: integer(), HardTimeout:: integer(),
+			  Priority :: integer(), BufferId :: integer(), OutPort :: ofp_port(),
+			  Flags :: integer(), Actions :: binary()|list(binary)) -> binary().
 encode_ofp_flow_mod(Match, Cookie, Command, IdleTimeout, HardTimeout, Priority,
 		    BufferId, OutPort, Flags, Actions) when is_list(Actions) ->
     encode_ofp_flow_mod(Match, Cookie, Command, IdleTimeout, HardTimeout, Priority,
@@ -1044,10 +1065,13 @@ enc_nxm_match(<<_Vendor:16, _Field:7, 0:1, Length:8>> = Header, Value)
   when is_binary(Value) ->
     <<Header/binary, Value:Length/bytes>>.
 
+-spec encode_nx_matches([{nxm_header(), term()}], [binary()]) -> binary().
 encode_nx_matches([], Acc) ->
     list_to_binary(lists:reverse(Acc));
 encode_nx_matches([{Header, Value}|Rest], Acc) ->
     encode_nx_matches(Rest, [enc_nxm_match(nxm_header(Header), Value)|Acc]).
+
+-spec encode_nx_matches([{nxm_header(), term()}]) -> binary().
 encode_nx_matches(NxMatch) ->
     encode_nx_matches(NxMatch, []).
 
@@ -1116,7 +1140,8 @@ encode_nx_flow_mod(Cookie, Command, IdleTimeout, HardTimeout, Priority,
 -define(NXM_NX_ND_SLL,      ?NXM_HEADER  (16#0001, 24, 6)).
 -define(NXM_NX_ND_TLL,      ?NXM_HEADER  (16#0001, 25, 6)).
 
--spec nxm_header(Header :: nxm_header() | binary()) -> binary().
+-spec nxm_header(Header :: nxm_header()) -> binary();
+		(Header :: binary()) -> nxm_header() | binary().
 nxm_header(nxm_of_in_port)	-> ?NXM_OF_IN_PORT;
 nxm_header(nxm_of_eth_dst)	-> ?NXM_OF_ETH_DST;
 nxm_header(nxm_of_eth_dst_w)	-> ?NXM_OF_ETH_DST_W;
@@ -1424,7 +1449,7 @@ encode_msg(#ofp_flow_mod{match = Match, cookie = Cookie, command = Command,
 			 priority = Priority, buffer_id = BufferId,
 			 out_port = OutPort, flags = Flags, actions = Actions}) ->
     encode_ofp_flow_mod(encode_match(Match), Cookie, Command, 
-			IdleTimeout, HardTimeout, Priority,	BufferId, OutPort,
+			IdleTimeout, HardTimeout, Priority, BufferId, OutPort,
 			enc_flags(ofp_flow_mod_flags(), Flags), encode_actions(Actions));
 
 encode_msg(#ofp_flow_removed{match = Match, cookie = Cookie, priority = Priority,
