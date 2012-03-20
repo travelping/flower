@@ -176,8 +176,8 @@ ofpt(queue_get_config_reply)	-> 21;
 
 ofpt(_)		-> error.
 
--spec ofp_error_type(non_neg_integer()) -> ofp_error() | non_neg_integer();
-		    (ofp_error()) -> non_neg_integer().
+-spec ofp_error_type(non_neg_integer()) -> ofp_error_type() | non_neg_integer();
+		    (ofp_error_type()) -> non_neg_integer().
 ofp_error_type(hello_failed)    -> 0;
 ofp_error_type(bad_request)     -> 1;
 ofp_error_type(bad_action)      -> 2;
@@ -194,8 +194,8 @@ ofp_error_type(5) -> queue_op_failed;
 
 ofp_error_type(X) when is_integer(X) -> X.
 
--spec ofp_error_code_type(ofp_error(), non_neg_integer()) -> atom() | 'error';
-			 (ofp_error(), atom()) -> non_neg_integer() | 'error'.
+-spec ofp_error_code_type(ofp_error_type(), non_neg_integer()) -> atom() | 'error';
+			 (ofp_error_type(), atom()) -> non_neg_integer() | 'error'.
 ofp_error_code_type(hello_failed, 0) -> incompatible;
 ofp_error_code_type(hello_failed, 1) -> eperm;
 
@@ -488,6 +488,7 @@ decode_msg(features_reply, <<DataPathId:64/integer, NBuffers:32/integer, NTables
 			 capabilities = dec_flags(ofp_capabilities(), Capabilities),
 			 actions = dec_flags(ofp_action_type(), Actions),
 			 ports = decode_phy_ports(Ports)};
+
 
 decode_msg(packet_in, <<BufferId:32/integer, TotalLen:16/integer, InPort:16/integer, Reason:8/integer, _Pad:1/binary, Data/binary>>) ->
     #ofp_packet_in{buffer_id = BufferId, total_len = TotalLen, in_port = ofp_port(InPort), reason = ofp_packet_in_reason(Reason), data = Data};
@@ -783,14 +784,16 @@ encode_ovs_vendor(Cmd, Data) ->
 encode_ofp_switch_features(DataPathId, NBuffers, NTables, Capabilities, Actions, Ports) ->
     <<DataPathId:64, NBuffers:32, NTables:8, 0:24, Capabilities:32, Actions:32, Ports/binary>>.
 
+-spec encode_ofp_error(non_neg_integer(), non_neg_integer(), binary()) -> binary().
+encode_ofp_error(Type, Code, Data) ->
+    <<Type:16/integer, Code:16/integer, Data/binary>>.
+
 -spec encode_phy_port(integer(), binary(), binary(), integer(), integer(), integer(), integer(), integer(), integer()) -> binary().
 encode_phy_port(PortNo, HwAddr, Name, Config, State,Curr, Advertised, Supported, Peer) ->
     PortNo0 = ofp_port(PortNo),
     Name0 = pad_to(16, Name),
     <<PortNo0:16, HwAddr:6/bytes, Name0:16/bytes, Config:32, State:32, Curr:32, Advertised:32, Supported:32, Peer:32>>.
 
-encode_phy_port(Port) when is_binary(Port) ->
-    Port;
 encode_phy_port(#ofp_phy_port{port_no = PortNo,
 			      hw_addr = HwAddr,
 			      name = Name,
@@ -813,8 +816,6 @@ encode_phy_ports([], Acc) ->
 encode_phy_ports([Port|Rest], Acc) ->
     encode_phy_ports(Rest, [encode_phy_port(Port)|Acc]).
 
-encode_phy_ports(Ports) when is_binary(Ports) ->
-    Ports;
 encode_phy_ports(Ports) ->
     encode_phy_ports(Ports, []).
 
@@ -842,7 +843,7 @@ bin_maybe_undefined(undefined, Len) -> pad_to(Len, <<0>>).
 bin_fixed_length(X, Len) when size(X) > Len -> binary_part(X, {0, Len});
 bin_fixed_length(X, Len) -> bin_maybe_undefined(X, Len).
 
--spec encode_ofp_match(integer(), integer()|atom(), binary(), binary(), integer(),
+-spec encode_ofp_match(integer(), ofp_port(), binary(), binary(), integer(),
 		       integer(), integer()|atom(), integer(), integer()|atom(),
 		       binary(), binary(), integer(), integer()) -> binary().
 encode_ofp_match(Wildcards, InPort, DlSrc, DlDst, DlVlan, DlVlanPcp, DlType,
@@ -1427,6 +1428,11 @@ encode_match(Match)
   when is_binary(Match) ->
     Match.
 
+encode_msg(#ofp_error{error = {Type, Code}, data = Data}) ->
+    encode_ofp_error(ofp_error_type(Type),
+		     ofp_error_code_type(Type, Code),
+		     Data);
+
 encode_msg(#ofp_switch_features{datapath_id = DataPathId,
 				n_buffers = NBuffers,
 				n_tables = NTables,
@@ -1537,6 +1543,7 @@ dec_flag([Flag|Rest], F, Acc) ->
         _ -> dec_flag(Rest, F bsr 1, Acc)
     end.
 
+-spec dec_flags(Flags, non_neg_integer()) -> Flags.
 dec_flags(Map, Flag) ->
     dec_flag(Map, Flag, []).
 
@@ -1548,5 +1555,6 @@ enc_flag([Flag|Rest], F, Pos, Acc) ->
 	_    -> enc_flag(Rest, F, Pos bsl 1, Acc)
     end.
 
+-spec enc_flags([Flags :: atom()], [Flags :: atom()]) -> non_neg_integer().
 enc_flags(Map, Flag) ->
     enc_flag(Map, Flag, 1, 0).
