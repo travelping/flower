@@ -26,6 +26,7 @@ Building
 --------
 
 Run tetrapak build:
+
     $ tetrapak build
     == tetrapak:boot =================
     Compiling tetrapak/flower_run.erl
@@ -56,6 +57,7 @@ flower_simple_switch is a very basic Layer 2 learning switch. It listens
 for connection from OpenFlow datapath elements on localhost:6633.
 
 Run it like this:
+
     $ erl -pa ebin
     Erlang R15B (erts-5.9) [source] [64-bit] [smp:2:2] [async-threads:0] [hipe] [kernel-poll:false]
     
