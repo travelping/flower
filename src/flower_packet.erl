@@ -391,6 +391,11 @@ ofp_stats_type(port)		-> 4;
 ofp_stats_type(queue)		-> 5;
 ofp_stats_type(vendor)		-> 16#ffff.
 
+ofp_queue_properties(0)        -> none;
+ofp_queue_properties(1)        -> min_rate;
+ofp_queue_properties(none)     -> 0;
+ofp_queue_properties(min_rate) -> 1.
+     
 ofp_vendor_stats_type({nicira, 0})	-> nxst_flow;
 ofp_vendor_stats_type({nicira, 1})	-> nxst_aggregate;
 ofp_vendor_stats_type(nxst_flow)	-> {nicira, 0};
@@ -478,6 +483,15 @@ decode_nx_matches(_, Acc) ->
 decode_nx_matches(NxMatch) ->
     decode_nx_matches(NxMatch, []).
 
+decode_msg(error, << Type:16/integer, Code:16/integer, Data/binary >>) ->
+    Type1 = ofp_error_type(Type),
+    Code1 = ofp_error_code_type(Type1, Code),
+    Error = {Type1, Code1},
+    #ofp_error{error = Error, data = Data};
+
+decode_msg(vendor, << Vendor:32/integer, Cmd:32/integer, Data/binary >>) ->
+    decode_msg(of_vendor_ext({vendor(Vendor), Cmd}), Data);
+
 decode_msg(features_reply, <<DataPathId:64/integer, NBuffers:32/integer, NTables:8/integer, Pad:3/bytes,
 			     Capabilities:32/integer, Actions:32/integer, Ports/binary>>) ->
     ?DEBUG("DataPathId: ~p, NBuffers: ~p, NTables: ~p, Pad: ~p, Capabilities: ~p, Actions: ~p, Ports: ~p~n",
@@ -489,22 +503,14 @@ decode_msg(features_reply, <<DataPathId:64/integer, NBuffers:32/integer, NTables
 			 actions = dec_flags(ofp_action_type(), Actions),
 			 ports = decode_phy_ports(Ports)};
 
-
-decode_msg(packet_in, <<BufferId:32/integer, TotalLen:16/integer, InPort:16/integer, Reason:8/integer, _Pad:1/binary, Data/binary>>) ->
-    #ofp_packet_in{buffer_id = BufferId, total_len = TotalLen, in_port = ofp_port(InPort), reason = ofp_packet_in_reason(Reason), data = Data};
-
-decode_msg(packet_out, <<BufferId:32/integer, InPort:16/integer, ActionsLen:16/integer, Actions:ActionsLen/bytes, Data/binary>>) ->
-    #ofp_packet_out{buffer_id = BufferId, in_port = ofp_port(InPort), actions = decode_actions(Actions), data = Data};
+decode_msg(get_config_reply, <<Flags:16/integer, MissSendLen:16/integer>>) ->
+    #ofp_switch_config{flags = ofp_config_flags(Flags), miss_send_len = MissSendLen};
 
 decode_msg(set_config, <<Flags:16/integer, MissSendLen:16/integer>>) ->
     #ofp_switch_config{flags = ofp_config_flags(Flags), miss_send_len = MissSendLen};
 
-decode_msg(flow_mod, <<Match:40/bytes, Cookie:64/integer, Command:16/integer, IdleTimeout:16/integer, HardTimeout:16/integer,
-		       Priority:16/integer, BufferId:32/integer, OutPort:16/integer, Flags:16/integer, Actions/binary>>) ->
-    #ofp_flow_mod{match = decode_ofp_match(Match), cookie = Cookie, command = ofp_flow_mod_command(Command),
-		  idle_timeout = IdleTimeout, hard_timeout = HardTimeout,
-		  priority = Priority, buffer_id = BufferId,
-		  out_port = ofp_port(OutPort), flags = dec_flags(ofp_flow_mod_flags(), Flags), actions = decode_actions(Actions)};
+decode_msg(packet_in, <<BufferId:32/integer, TotalLen:16/integer, InPort:16/integer, Reason:8/integer, _Pad:1/binary, Data/binary>>) ->
+    #ofp_packet_in{buffer_id = BufferId, total_len = TotalLen, in_port = ofp_port(InPort), reason = ofp_packet_in_reason(Reason), data = Data};
 
 decode_msg(flow_removed, <<Match:40/bytes, Cookie:64/integer, Priority:16/integer, Reason:8/integer, _Pad1:1/bytes,
 			   DurationSec:32/integer, DurationNSec:32/integer, IdleTimeout:16/integer, _Pad2:2/bytes,
@@ -516,20 +522,35 @@ decode_msg(port_status, <<Reason:8/integer, _Pad:7/bytes, PhyPort/binary>>) ->
     #ofp_port_status{reason = ofp_port_reason(Reason),
 		     port = decode_phy_port(PhyPort)};
 
+decode_msg(packet_out, <<BufferId:32/integer, InPort:16/integer, ActionsLen:16/integer, Actions:ActionsLen/bytes, Data/binary>>) ->
+    #ofp_packet_out{buffer_id = BufferId, in_port = ofp_port(InPort), actions = decode_actions(Actions), data = Data};
+
+decode_msg(flow_mod, <<Match:40/bytes, Cookie:64/integer, Command:16/integer, IdleTimeout:16/integer, HardTimeout:16/integer,
+		       Priority:16/integer, BufferId:32/integer, OutPort:16/integer, Flags:16/integer, Actions/binary>>) ->
+    #ofp_flow_mod{match = decode_ofp_match(Match), cookie = Cookie, command = ofp_flow_mod_command(Command),
+		  idle_timeout = IdleTimeout, hard_timeout = HardTimeout,
+		  priority = Priority, buffer_id = BufferId,
+		  out_port = ofp_port(OutPort), flags = dec_flags(ofp_flow_mod_flags(), Flags), actions = decode_actions(Actions)};
+
+decode_msg(port_mod, <<PortNo:16/integer, HwAddr:6/bytes, Config:32/integer, Mask:32/integer, Advertise:32/integer, _Pad:4/bytes>>) ->
+    #ofp_port_mod{port_no = PortNo, hw_addr = HwAddr,
+		  config = dec_flags(ofp_port_config(), Config),
+		  mask = dec_flags(ofp_port_config(), Mask),
+		  advertise = dec_flags(ofp_port_features(), Advertise)};
+
 decode_msg(stats_request, <<Type:16/integer, _Flags:16/integer, Msg/binary>>) ->
     decode_stats_request(ofp_stats_type(Type), Msg);
 
 decode_msg(stats_reply, <<Type:16/integer, _Flags:16/integer, Msg/binary>>) ->
     decode_stats_reply(ofp_stats_type(Type), [], Msg);
 
-decode_msg(vendor, << Vendor:32/integer, Cmd:32/integer, Data/binary >>) ->
-    decode_msg(of_vendor_ext({vendor(Vendor), Cmd}), Data);
+decode_msg(queue_get_config_request, <<Port:16/integer, _Pad:2/bytes>>) ->
+    #ofp_queue_get_config_request{port = ofp_port(Port)};
 
-decode_msg(error, << Type:16/integer, Code:16/integer, Data/binary >>) ->
-    Type1 = ofp_error_type(Type),
-    Code1 = ofp_error_code_type(Type1, Code),
-    Error = {Type1, Code1},
-    #ofp_error{error = Error, data = Data};
+decode_msg(ofp_queue_get_config_reply, <<Port:16/integer, _Pad:6/bytes, Queues/binary>>) ->
+    #ofp_queue_get_config_reply{port = ofp_port(Port), queues = decode_queues(Queues)};
+
+%% Nicira Extensions
 
 decode_msg(nxt_flow_mod_table_id, <<Set:8/integer>>) ->
     #nxt_flow_mod_table_id{set = bool(Set)};
@@ -651,6 +672,29 @@ decode_phy_ports(<<Port:48/binary, Rest/binary>>, Acc) ->
 
 decode_phy_ports(Msg) ->
     decode_phy_ports(Msg, []).
+
+decode_queue_prop(none, <<>>) ->
+    none;
+decode_queue_prop(min_rate, <<Rate:16/integer, _Pad:6/bytes>>) ->
+    #ofp_queue_prop_min_rate{rate = Rate}.
+
+decode_queue_props(<<>>, Acc) ->
+    lists:reverse(Acc);
+decode_queue_props(<<Property:16/integer, Len:16/integer, _Pad:4/bytes, Data>>, Acc) ->
+    PropLen = Len - 8,
+    <<Prop:PropLen/bytes, Rest/binary>> = Data,
+    decode_queue_props(Rest, [decode_queue_prop(ofp_queue_properties(Property), Prop)|Acc]).
+
+decode_queues(<<>>, Acc) ->
+    lists:reverse(Acc);
+decode_queues(<<QueueId:32/integer, Len:16/integer, _Pad:2/bytes, Data/binary>>, Acc) ->
+    DescLen = Len - 8,
+    <<Desc:DescLen/bytes, Rest/binary>> = Data,
+    Properties = decode_queues(Rest, [decode_queue_props(Desc, [])|Acc]),
+    #ofp_packet_queue{queue_id = QueueId, properties = Properties}.
+
+decode_queues(Queues) ->
+    decode_queues(Queues, []).
 
 decode_binstring(Str) ->
     [Name|_Rest] = binary:split(Str, <<0>>),
@@ -823,6 +867,28 @@ encode_ofp_port_status(Reason, Port) ->
     Reason0 = ofp_port_reason(Reason),
     <<Reason0:8, 0:56, Port/binary>>.
 
+-spec encode_queue_get_config_request(integer()) -> binary().
+encode_queue_get_config_request(Port) ->
+    <<Port:16>>.
+
+encode_ofp_queue_prop(none) ->
+    <<>>;
+encode_ofp_queue_prop(#ofp_queue_prop_min_rate{rate = Rate}) ->
+    <<Rate:16>>.
+
+encode_ofp_packet_queue(#ofp_packet_queue{queue_id = QueueId, properties = Properties}) ->
+    Props = << << (pad_to(8, encode_ofp_queue_prop(P)))/binary >> || P <- Properties >>,
+    Len = size(Props) + 8,
+    <<QueueId:32, Len:16, 0:16, Props/binary>>.
+
+-spec encode_ofp_packet_queues([#ofp_packet_queue{}]) -> binary().
+encode_ofp_packet_queues(Queues) ->
+    << << (encode_ofp_packet_queue(Q))/binary >> || Q <- Queues >>.
+
+-spec encode_ofp_queue_get_config_reply(integer(), binary()) -> binary().
+encode_ofp_queue_get_config_reply(Port, Queues) ->
+    <<Port:16, 0:48, Queues/binary>>.
+
 -spec encode_ofp_switch_config(integer(), integer()) -> binary().
 encode_ofp_switch_config(Flags, MissSendLen) ->
     <<Flags:16, MissSendLen:16>>.
@@ -947,12 +1013,20 @@ encode_ofp_flow_removed(Match, Cookie, Priority, Reason, {DurationSec, DurationN
     <<Match/binary, Cookie:64, Priority:16, Reason:8, 0:8, DurationSec:32, DurationNSec:32, IdleTimeout:16, 0:16,
       PacketCount:64, ByteCount:64>>.
 
+-spec encode_ofp_packet_in(integer(), integer(), integer(), integer(), binary()) -> binary().
+encode_ofp_packet_in(BufferId, TotalLen, InPort, Reason, Data) ->
+    <<BufferId:32, TotalLen:16, InPort:16, Reason:8, 0:8, Data/binary>>.
+
 -spec encode_ofp_packet_out(integer(), integer()|atom(), binary(), list(binary())|binary()) -> binary().
 encode_ofp_packet_out(BufferId, InPort, Actions, Data) when is_list(Actions) ->
     encode_ofp_packet_out(BufferId, InPort, list_to_binary(Actions), Data);
 encode_ofp_packet_out(BufferId, InPort, Actions, Data) ->
     InPort0 = ofp_port(InPort),
     <<BufferId:32, InPort0:16, (size(Actions)):16, Actions/binary, Data/binary>>.
+
+-spec encode_ofp_port_mod(integer(), binary(), integer(), integer(), integer()) -> binary().
+encode_ofp_port_mod(PortNo, HwAddr, Config, Mask, Advertise) ->
+    <<PortNo:16, HwAddr/binary, Config:32, Mask:32, Advertise:32>>.
 
 encode_ofp_desc_stats(MfrDesc, HwDesc, SwDesc, SerialNum, DpDesc) ->
     MfrDesc0 = bin_fixed_length(MfrDesc, 256),
@@ -1447,8 +1521,21 @@ encode_msg(#ofp_switch_features{datapath_id = DataPathId,
 encode_msg(#ofp_switch_config{flags = Flags, miss_send_len = MissSendLen}) ->
     encode_ofp_switch_config(ofp_config_flags(Flags), MissSendLen);
 
+encode_msg(#ofp_packet_in{buffer_id = BufferId, total_len = TotalLen,
+			  in_port = InPort, reason = Reason, data = Data}) ->
+    encode_ofp_packet_in(BufferId, TotalLen, ofp_port(InPort), ofp_packet_in_reason(Reason), Data);
+
+encode_msg(#ofp_flow_removed{match = Match, cookie = Cookie, priority = Priority,
+			     reason = Reason, duration = Duration, idle_timeout = IdleTimeout,
+			     packet_count = PacketCount, byte_count = ByteCount}) ->
+    encode_ofp_flow_removed(encode_match(Match), Cookie, Priority, Reason, Duration,
+			    IdleTimeout, PacketCount, ByteCount);
+
 encode_msg(#ofp_port_status{reason = Reason, port = Port}) ->
     encode_ofp_port_status(Reason, encode_phy_port(Port));
+
+encode_msg(#ofp_packet_out{buffer_id = BufferId, in_port = InPort, actions = Actions, data = Data}) ->
+    encode_ofp_packet_out(BufferId, InPort, encode_actions(Actions), Data);
 
 encode_msg(#ofp_flow_mod{match = Match, cookie = Cookie, command = Command,
 			 idle_timeout = IdleTimeout, hard_timeout = HardTimeout,
@@ -1458,14 +1545,16 @@ encode_msg(#ofp_flow_mod{match = Match, cookie = Cookie, command = Command,
 			IdleTimeout, HardTimeout, Priority, BufferId, OutPort,
 			enc_flags(ofp_flow_mod_flags(), Flags), encode_actions(Actions));
 
-encode_msg(#ofp_flow_removed{match = Match, cookie = Cookie, priority = Priority,
-			     reason = Reason, duration = Duration, idle_timeout = IdleTimeout,
-			     packet_count = PacketCount, byte_count = ByteCount}) ->
-    encode_ofp_flow_removed(encode_match(Match), Cookie, Priority, Reason, Duration,
-			    IdleTimeout, PacketCount, ByteCount);
+encode_msg(#ofp_port_mod{port_no = PortNo, hw_addr = HwAddr,
+			 config = Config, mask = Mask, advertise = Advertise}) ->
+    encode_ofp_port_mod(PortNo, HwAddr, enc_flags(ofp_port_config(), Config),
+			enc_flags(ofp_port_config(), Mask), enc_flags(ofp_port_features(), Advertise));
 
-encode_msg(#ofp_packet_out{buffer_id = BufferId, in_port = InPort, actions = Actions, data = Data}) ->
-    encode_ofp_packet_out(BufferId, InPort, encode_actions(Actions), Data);
+encode_msg(#ofp_queue_get_config_request{port = Port}) ->
+    encode_queue_get_config_request(ofp_port(Port));
+
+encode_msg(#ofp_queue_get_config_reply{port = Port, queues = Queues}) ->
+    encode_ofp_queue_get_config_reply(port = ofp_port(Port), encode_ofp_packet_queues(Queues));
 
 encode_msg([Head|_] = Msg)
   when is_record(Head, ofp_desc_stats); is_record(Head, ofp_flow_stats); is_record(Head, ofp_aggregate_stats);
