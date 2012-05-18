@@ -72,9 +72,9 @@ ofp_matchflow(tp_dst, Match, Flow) ->
 ofp_matchflow(nw_tos, Match, Flow) ->
     ofp_match({nw_tos, Flow#flow.nw_tos}, Match);
 ofp_matchflow({nw_src_mask, Mask}, Match, Flow) ->
-    ofp_match({nw_src_mask, Mask, Flow#flow.nw_src}, Match);
+    ofp_match({nw_src_mask, Flow#flow.nw_src, Mask}, Match);
 ofp_matchflow({nw_dst_mask, Mask}, Match, Flow) ->
-    ofp_match({nw_dst_mask, Mask, Flow#flow.nw_dst}, Match).
+    ofp_match({nw_dst_mask, Flow#flow.nw_dst, Mask}, Match).
 
 -spec encode_ofp_matchflow(list(term()), flow()) -> ofp_match().
 encode_ofp_matchflow(MatchSpec, Flow) ->
@@ -110,9 +110,9 @@ ofp_match({tp_dst, TpDst}, #ofp_match{wildcards = Wildcards} = Match) ->
     Match#ofp_match{wildcards = Wildcards band (bnot ?OFPFW_TP_DST), tp_dst = TpDst};
 ofp_match({nw_tos, NwTos}, #ofp_match{wildcards = Wildcards} = Match) ->
     Match#ofp_match{wildcards = Wildcards band (bnot ?OFPFW_NW_TOS), nw_tos = NwTos};
-ofp_match({nw_src_mask, Mask, NwSrc}, #ofp_match{wildcards = Wildcards} = Match) ->
+ofp_match({nw_src_mask, NwSrc, Mask}, #ofp_match{wildcards = Wildcards} = Match) ->
     Match#ofp_match{wildcards = (Wildcards band bnot ?OFPFW_NW_SRC_MASK) bor (((32 - Mask) band 16#3F) bsl 8), nw_src = NwSrc};
-ofp_match({nw_dst_mask, Mask, NwDst}, #ofp_match{wildcards = Wildcards} = Match) ->
+ofp_match({nw_dst_mask, NwDst, Mask}, #ofp_match{wildcards = Wildcards} = Match) ->
     Match#ofp_match{wildcards = (Wildcards band bnot ?OFPFW_NW_DST_MASK) bor (((32 - Mask) band 16#3F) bsl 14), nw_dst = NwDst}.
 
 -spec encode_ofp_match(list(term())) -> ofp_match().
@@ -148,13 +148,13 @@ dec_ofp_match(tp_dst, Match, MatchSpec) ->
 dec_ofp_match(nw_tos, Match, MatchSpec) ->
     [{nw_tos, Match#ofp_match.nw_tos}|MatchSpec];
 dec_ofp_match(nw_src_mask, Match, MatchSpec) ->
-    [{nw_src_mask, (Match#ofp_match.wildcards bsr  8) band 16#3F, Match#ofp_match.nw_src}|MatchSpec];
+    [{nw_src_mask, Match#ofp_match.nw_src}, 32 - (Match#ofp_match.wildcards bsr  8) band 16#3F|MatchSpec];
 dec_ofp_match(nw_dst_mask, Match, MatchSpec) ->
-    [{nw_dst_mask, (Match#ofp_match.wildcards bsr 14) band 16#3F, Match#ofp_match.nw_dst}|MatchSpec].
+    [{nw_dst_mask, Match#ofp_match.nw_dst, 32 - (Match#ofp_match.wildcards bsr 14) band 16#3F}|MatchSpec].
 
 dec_ofp_match_fun({Prop, Bits}, #ofp_match{wildcards = Wildcards} = Match, MatchSpec) ->
     if
-	(Wildcards band Bits) =/= 0 ->
+	(Wildcards band Bits) =/= Bits ->
 	    dec_ofp_match(Prop, Match, MatchSpec);
 	true ->
 	    MatchSpec
