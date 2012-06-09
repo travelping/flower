@@ -1,0 +1,108 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <title>Flower by travelping</title>
+
+    <link rel="stylesheet" href="stylesheets/styles.css">
+    <link rel="stylesheet" href="stylesheets/pygment_trac.css">
+    <script src="javascripts/scale.fix.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  </head>
+  <body>
+    <div class="wrapper">
+      <header>
+        <h1>Flower</h1>
+        <p>FlowER - a Erlang OpenFlow development platform</p>
+        <p class="view"><a href="https://github.com/travelping/flower">View the Project on GitHub <small>travelping/flower</small></a></p>
+        <ul>
+          <li><a href="https://github.com/travelping/flower/zipball/master">Download <strong>ZIP File</strong></a></li>
+          <li><a href="https://github.com/travelping/flower/tarball/master">Download <strong>TAR Ball</strong></a></li>
+          <li><a href="https://github.com/travelping/flower">View On <strong>GitHub</strong></a></li>
+        </ul>
+      </header>
+      <section>
+        <h1>FlowER - a Erlang OpenFlow development platform</h1>
+
+<p>FlowER is a framework and a set of helper libraries to
+develop OpenFlow controllers in Erlang.</p>
+
+<h2>Installation</h2>
+
+<p>FlowER is build for deployment model that packages each Erlang
+application either as RPM or DEB package. Dependencie resolution
+is done at install time and at build time to the package management
+tools. For manual building, the required dependencies therefore have to be
+installed manually.</p>
+
+<h3>Dependencies:</h3>
+
+<h4>Build Tool:</h4>
+
+<ul>
+<li>tetrapak (<a href="http://github.com/fjl/tetrapak">http://github.com/fjl/tetrapak</a>)</li>
+</ul><h4>Support Appplications:</h4>
+
+<ul>
+<li>gen_listener_tcp (<a href="http://github.com/travelping/gen_listener_tcp">http://github.com/travelping/gen_listener_tcp</a>)</li>
+<li>regine (<a href="http://github.com/travelping/regine">http://github.com/travelping/regine</a>)</li>
+</ul><h2>Building</h2>
+
+<p>Run tetrapak build:</p>
+
+<pre><code>$ tetrapak build
+== tetrapak:boot =================
+Compiling tetrapak/flower_run.erl
+== build:erlang ==================
+Compiling src/flower_component_sup.erl
+Compiling src/flower_app.erl
+Compiling src/flower_datapath.erl
+Compiling src/flower_icmp.erl
+Compiling src/flower_datapath_sup.erl
+Compiling src/flower_event.erl
+Compiling src/lrulist.erl
+Compiling src/flower_match.erl
+Compiling src/flower_arp.erl
+Compiling src/flower_packet.erl
+Compiling src/flower_nib4.erl
+Compiling src/flower_tcp_socket.erl
+Compiling src/flower_tools.erl
+Compiling src/flower_simple_switch.erl
+Compiling src/flower_mac_learning.erl
+Compiling src/flower_dispatcher.erl
+Compiling src/flower_flow.erl
+Compiling src/flower_sup.erl
+</code></pre>
+
+<h2>Sample Switch</h2>
+
+<p>flower_simple_switch is a very basic Layer 2 learning switch. It listens
+for connection from OpenFlow datapath elements on localhost:6633.</p>
+
+<p>Run it like this:</p>
+
+<pre><code>$ erl -pa ebin
+Erlang R15B (erts-5.9) [source] [64-bit] [smp:2:2] [async-threads:0] [hipe] [kernel-poll:false]
+
+Eshell V5.9  (abort with ^G)
+1&gt; application:start(sasl),
+1&gt; application:start(gen_listener_tcp),
+1&gt; application:start(regine),
+1&gt; application:start(flower).          
+2&gt; flower_simple_switch:start_link().
+</code></pre>
+      </section>
+    </div>
+    <footer>
+      <p>Project maintained by <a href="https://github.com/travelping">travelping</a></p>
+      <p>Hosted on GitHub Pages &mdash; Theme by <a href="https://github.com/orderedlist">orderedlist</a></p>
+    </footer>
+    <!--[if !IE]><script>fixScale(document);</script><!--<![endif]-->
+    
+  </body>
+</html>
