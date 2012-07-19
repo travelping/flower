@@ -607,7 +607,7 @@ decode_nx_action(nxast_set_tunnel64, << 0:48, TunId:64 >>) ->
 decode_vendor_action(nicira, <<Action:16, Msg/binary>>) ->
     decode_nx_action(nxt_action(Action), Msg);
 decode_vendor_action(Vendor, Msg) ->
-    #ofp_action_vendor_header{vendor = Vendor, msg = Msg}.
+    #ofp_action_vendor{vendor = Vendor, msg = Msg}.
 
 -spec decode_action(Type :: non_neg_integer(), Length :: non_neg_integer(), binary()) -> ofp_action().
 decode_action(0, 4, <<Port:16/integer, MaxLen:16/integer>>) ->
@@ -834,9 +834,8 @@ encode_ofp_error(Type, Code, Data) ->
 
 -spec encode_phy_port(integer(), binary(), binary(), integer(), integer(), integer(), integer(), integer(), integer()) -> binary().
 encode_phy_port(PortNo, HwAddr, Name, Config, State,Curr, Advertised, Supported, Peer) ->
-    PortNo0 = ofp_port(PortNo),
     Name0 = pad_to(16, Name),
-    <<PortNo0:16, HwAddr:6/bytes, Name0:16/bytes, Config:32, State:32, Curr:32, Advertised:32, Supported:32, Peer:32>>.
+    <<PortNo:16, HwAddr:6/bytes, Name0:16/bytes, Config:32, State:32, Curr:32, Advertised:32, Supported:32, Peer:32>>.
 
 encode_phy_port(#ofp_phy_port{port_no = PortNo,
 			      hw_addr = HwAddr,
@@ -847,7 +846,7 @@ encode_phy_port(#ofp_phy_port{port_no = PortNo,
 			      advertised = Advertised,
 			      supported = Supported,
 			      peer = Peer}) ->
-    encode_phy_port(PortNo, HwAddr, Name, 
+    encode_phy_port(ofp_port(PortNo), HwAddr, Name, 
 		    enc_flags(ofp_port_config(), Config),
 		    enc_flags(ofp_port_state(), State),
 		    enc_flags(ofp_port_features(), Curr),
@@ -855,13 +854,8 @@ encode_phy_port(#ofp_phy_port{port_no = PortNo,
 		    enc_flags(ofp_port_features(), Supported),
 		    enc_flags(ofp_port_features(), Peer)).
 
-encode_phy_ports([], Acc) ->
-    list_to_binary(lists:reverse(Acc));
-encode_phy_ports([Port|Rest], Acc) ->
-    encode_phy_ports(Rest, [encode_phy_port(Port)|Acc]).
-
 encode_phy_ports(Ports) ->
-    encode_phy_ports(Ports, []).
+    << << (encode_phy_port(P))/binary >> || P <- Ports >>.
 
 encode_ofp_port_status(Reason, Port) ->
     Reason0 = ofp_port_reason(Reason),
@@ -1393,7 +1387,7 @@ encode_action(#ofp_action_tp_port{type = Type, tp_port = TpPort}) ->
 encode_action(#ofp_action_enqueue{port = Port, queue_id = QueueId}) ->
     encode_ofs_action_enqueue(Port, QueueId);
 
-encode_action(#ofp_action_vendor_header{vendor = Vendor, msg = Msg}) ->
+encode_action(#ofp_action_vendor{vendor = Vendor, msg = Msg}) ->
     encode_ofs_action_vendor(Vendor, Msg);
 
 encode_action(#nx_action_resubmit{in_port = InPort}) ->
