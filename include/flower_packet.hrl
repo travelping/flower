@@ -85,6 +85,19 @@
 -type nx_match() :: [{nxm_header(), term()}].
 -type of_vendor_ext() :: 'nxt_role_request' | 'nxt_role_reply' | 'nxt_set_flow_format' | 'nxt_flow_mod' | 'nxt_flow_removed' | 'nxt_flow_mod_table_id'.
 
+-type oxm_tlv_type() :: 'in_port' | 'in_phy_port' | 'metadata' | 'eth_dst' | 'eth_src' |
+			'eth_type' | 'vlan_vid' | 'vlan_vid' | 'vlan_vid' | 'vlan_pcp' |
+			'ip_dscp' | 'ip_ecn' | 'ip_proto' | 'ipv4_src' | 'ipv4_dst' |
+			'tcp_src' | 'tcp_dst' | 'udp_src' | 'udp_dst' | 'sctp_src' |
+			'sctp_dst' | 'icmpv4_type' | 'icmpv4_code' | 'arp_op' | 'arp_spa' |
+			'arp_tpa' | 'arp_sha' | 'arp_tha' | 'ipv6_src' | 'ipv6_dst' |
+			'ipv6_flabel' | 'icmpv6_type' | 'icmpv6_code' | 'ipv6_nd_target' |
+			'ipv6_nd_sll' | 'ipv6_nd_tll' | 'mpls_flabel' | 'mpls_tc' |
+			{Class :: integer(), Field :: integer}.
+-type oxm_tlv_gen() :: {oxm_tlv_type(), Value :: any()}.
+-type oxm_tlv_gen_mask() :: {oxm_tlv_type(), {Value :: any(), Mask :: any()}}.
+-type oxm_tlv() :: oxm_tlv_gen() | oxm_tlv_gen_mask().
+
 -define(ETH_TYPE_NONE,   16#5ff).
 -define(ETH_TYPE_MIN,    16#600).
 -define(ETH_TYPE_IP,    16#0800).
@@ -162,6 +175,17 @@
 	  total_len = 0		:: non_neg_integer(),		%% Full length of frame.
 	  reason		:: ofp_packet_in_reason(),	%% Reason packet is being sent
 	  table_id = 0		:: non_neg_integer(),		%% ID of the table that was looked up
+	  data = <<>>		:: binary()			%% Ethernet frame, halfway through 32-bit word,
+								%% so the IP header is 32-bit aligned.
+}).
+
+%% Packet received on port (datapath -> controller).
+-record(ofp_packet_in_v12, {
+	  buffer_id = 0		:: non_neg_integer(),		%% ID assigned by datapath.
+	  total_len = 0		:: non_neg_integer(),		%% Full length of frame.
+	  reason		:: ofp_packet_in_reason(),	%% Reason packet is being sent (one of OFPR_*)
+	  table_id = 0		:: non_neg_integer(),		%% ID of the table that was looked up
+	  match = []		:: [oxm_tlv()],			%% Packet metadata.
 	  data = <<>>		:: binary()			%% Ethernet frame, halfway through 32-bit word,
 								%% so the IP header is 32-bit aligned.
 }).
@@ -328,6 +352,11 @@
 %% Decrement IP TTL.
 -record(ofp_action_dec_nw_ttl, {}).
 
+%% Set a header field using OXM TLV format.
+-record(ofp_action_set_field, {
+	  tlv = undefined		:: oxm_tlv()		%% exactly one TLV
+	 }).
+
 %% Vendor action
 -record(ofp_action_vendor, {
 	  vendor,						%% Vendor ID
@@ -420,6 +449,32 @@
 	  instructions = []	:: ofp_instructions()		%% List of instructions
 }).
 
+-record(ofp_flow_mod_v12, {
+	  cookie = 0		:: non_neg_integer(),		%% Opaque controller-issued identifier.
+	  cookie_mask = 0	:: non_neg_integer(),		%% Mask used to restrict the cookie bits
+								%% that must match when the command is
+								%% OFPFC_MODIFY* or OFPFC_DELETE*. A value
+								%% of 0 indicates no restriction.
+	  table_id		:: ofp_table_id(),		%% ID of the table to put the flow in
+	  command		:: ofp_command(),		%% Flow actions.
+	  idle_timeout = 0	:: non_neg_integer(),		%% Idle time before discarding (seconds).
+	  hard_timeout = 0	:: non_neg_integer(),		%% Max time before discarding (seconds).
+	  priority = 0		:: non_neg_integer(),		%% Priority level of flow entry.
+	  buffer_id = -1	:: integer(),			%% Buffered packet to apply to (or -1).
+								%% Not meaningful for OFPFC_DELETE*.
+	  out_port = none	:: ofp_port(),			%% For OFPFC_DELETE* commands, require
+								%% matching entries to include this as an
+								%% output port. A value of OFPP_ANY
+								%% indicates no restriction.
+	  out_group = 0		:: ofp_group(),			%% For OFPFC_DELETE* commands, require
+								%% matching entries to include this as an
+								%% output group. A value of OFPG_ANY
+								%% indicates no restriction.
+	  flags	= []		:: [ofp_flags()],		%% Flags
+	  match	= []		:: binary() | [oxm_tlv()],	%% Fields to match
+	  instructions = []	:: ofp_instructions()		%% List of instructions
+}).
+
 %% Bucket for use in groups.
 -record(ofp_bucket, {
 	weight = 0		:: uint16(),			%% Relative weight of bucket. Only
@@ -471,9 +526,20 @@
 	  rate = 0		:: non_neg_integer()		%% In 1/10 of a percent; >1000 -> disabled.
 }).
 
+%% Max-Rate queue property description.
+-record(ofp_queue_prop_max_rate, {
+	  rate = 0		:: non_neg_integer()		%% In 1/10 of a percent; >1000 -> disabled.
+}).
+
 %% Full description for a queue.
 -record(ofp_packet_queue, {
 	  queue_id = 0		:: non_neg_integer(),		%% Id for the specific queue.
+	  properties = []	:: [ofp_queue_prop()]		%% List of properties.
+}).
+
+-record(ofp_packet_queue_v12, {
+	  queue_id = 0		:: non_neg_integer(),		%% Id for the specific queue.
+	  port = none		:: ofp_port(),			%% Port this queue is attached to.
 	  properties = []	:: [ofp_queue_prop()]		%% List of properties.
 }).
 
@@ -522,6 +588,20 @@
 	  packet_count		:: non_neg_integer(),
 	  byte_count		:: non_neg_integer(),
 	  match			:: binary() | #ofp_match{}	%% Description of fields.
+}).
+
+%% Flow removed (datapath -> controller).
+-record(ofp_flow_removed_v12, {
+	  cookie = 0		:: non_neg_integer(),		%% Opaque controller-issued identifier.
+	  priority = 0		:: non_neg_integer(),		%% Priority level of flow entry.
+	  reason		:: ofp_reason(),		%% Reason
+	  table_id		:: uint8(),			%% ID of the table
+	  duration		:: ofp_duration(),		%% Time flow was alive in seconds,nanoseconds.
+	  idle_timeout		:: non_neg_integer(),		%% Idle timeout from original flow mod.
+	  hard_timeout		:: non_neg_integer(),		%% Hard timeout from original flow mod.
+	  packet_count		:: non_neg_integer(),
+	  byte_count		:: non_neg_integer(),
+	  match			:: [oxm_tlv()]			%% Description of fields.
 }).
 
 %% A physical port has changed in the datapath
@@ -730,6 +810,7 @@
 
 %% Request flow table statistics.
 -record(ofp_table_stats_request, {}).
+-record(ofp_rofl_broken_table_stats_request, {}).
 
 %% Flow table statistics.
 -record(ofp_table_stats, {
@@ -763,6 +844,57 @@
 	  lookup_count	:: uint64(),			%% Number of packets looked up in table.
 	  matched_count	:: uint64()			%% Number of packets that hit table.
 }).
+
+
+
+
+%% Flow table statistics.
+-record(ofp_table_stats_v12, {
+	  table_id		:: uint8(),		%% Identifier of table. Lower numbered tables
+							%% are consulted first.
+	  name			:: binary(),
+	  match			:: uint64(),		%% Bitmap of OFPXMT_* that indicate the fields
+							%% the table can match on.
+	  wildcards		:: uint64(),		%% Bitmap of OFPXMT_* wildcards that are
+							%% supported by the table.
+	  write_actions		:: uint32(),		%% Bitmap of OFPAT_* that are supported
+							%% by the table with OFPIT_WRITE_ACTIONS.
+	  apply_actions		:: uint32(),		%% Bitmap of OFPAT_* that are supported
+							%% by the table with OFPIT_APPLY_ACTIONS.
+	  write_setfields	:: uint64(),		%% Bitmap of (1 << OFPXMT_*) header fields that
+							%% can be set with OFPIT_WRITE_ACTIONS.
+	  apply_setfields	:: uint64(),		%% Bitmap of (1 << OFPXMT_*) header fields that
+							%% can be set with OFPIT_APPLY_ACTIONS.
+	  metadata_match	:: uint64(),		%% Bits of metadata table can match.
+	  metadata_write	:: uint64(),		%% Bits of metadata table can write.
+	  instructions		:: uint32(),		%% Bitmap of OFPIT_* values supported.
+	  config		:: uint32(),		%% Bitmap of OFPTC_* values
+	  max_entries		:: uint32(),		%% Max number of entries supported.
+	  active_count		:: uint32(),		%% Number of active entries.
+	  lookup_count		:: uint64(),		%% Number of packets looked up in table.
+	  matched_count		:: uint64()		%% Number of packets that hit table.
+}).
+
+%% Flow table statistics.
+-record(ofp_rofl_broken_table_stats_v12, {
+	  table_id	:: uint8(),			%% Identifier of table. Lower numbered tables
+							%% are consulted first.
+	  name		:: binary(),
+	  wildcards	:: uint32(),			%% Bitmap of OFPFMF_* wildcards that are
+							%% supported by the table.
+	  match		:: uint32(),			%% Bitmap of OFPFMF_* that indicate the fields
+							%% the table can match on.
+	  instructions	:: uint32(),			%% Bitmap of OFPIT_* values supported.
+	  write_actions	:: uint32(),			%% Bitmap of OFPAT_* that are supported
+							%% by the table with OFPIT_WRITE_ACTIONS.
+	  apply_actions	:: uint32(),			%% Bitmap of OFPAT_* that are supported
+	  config	:: uint32(),			%% Bitmap of OFPTC_* values
+	  max_entries	:: uint32(),			%% Max number of entries supported.
+	  active_count	:: uint32(),			%% Number of active entries.
+	  lookup_count	:: uint64(),			%% Number of packets looked up in table.
+	  matched_count	:: uint64()			%% Number of packets that hit table.
+}).
+
 
 %% Request physical port statistics.
 -record(ofp_port_stats_request, {
@@ -841,6 +973,16 @@
 	  buckets	:: [#ofp_bucket{}]
 }).
 
+%% Request group features
+-record(ofp_group_features_request, {}).
+
+%% Body of reply to OFPST_GROUP_FEATURES request. Group features.
+-record(ofp_group_features, {
+	  types		:: uint32(),				%% Bitmap of OFPGT_* values supported.
+	  capabilities	:: uint32(),				%% Bitmap of OFPGFC_* capability supported.
+	  max_groups	:: [uint32()],				%% Maximum number of groups for each type.
+	  actions	:: [uint32()]				%% Bitmaps of OFPAT_* that are supported.
+}).
 
 %% nicira extensions
 

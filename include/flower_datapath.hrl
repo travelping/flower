@@ -23,7 +23,9 @@
 		  barrier_request          = 0 :: non_neg_integer(),
 		  barrier_reply            = 0 :: non_neg_integer(),
 		  queue_get_config_request = 0 :: non_neg_integer(),
-		  queue_get_config_reply   = 0 :: non_neg_integer()
+		  queue_get_config_reply   = 0 :: non_neg_integer(),
+		  role_request             = 0 :: non_neg_integer(),
+		  role_reply               = 0 :: non_neg_integer()
 		 }).
 
 -record(flower_datapath_counters, {
