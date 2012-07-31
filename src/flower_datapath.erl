@@ -46,6 +46,7 @@
 -record(state, {
 	  transport,
 	  role = server,
+	  arguments,
 	  version = ?VERSION,
 
 	  xid = 1,
@@ -242,14 +243,19 @@ setup({accept, Socket}, State) ->
     ?DEBUG("NewState: ~p~n", [NewState]),
     send_request(hello, <<>>, {next_state, open, NewState, ?CONNECT_TIMEOUT});
 
+setup(timeout, State = #state{role = client, arguments = Arguments}) ->
+    ?DEBUG("connect timeout in state setup"),
+    setup({connect, Arguments}, State);
+
 setup({connect, Arguments}, State = #state{transport = TransportMod}) ->
+    NewState0 = State#state{role = client, arguments = Arguments},
     case TransportMod:connect(Arguments, ?CONNECT_SETUP_TIMEOUT) of
 	{ok, Socket} ->
-	    NewState = State#state{role = client, socket = Socket},
-	    ?DEBUG("NewState: ~p~n", [NewState]),
-	    send_request(hello, <<>>, {next_state, open, NewState, ?CONNECT_TIMEOUT});
+	    NewState1 = NewState0#state{socket = Socket},
+	    ?DEBUG("NewState: ~p~n", [NewState1]),
+	    send_request(hello, <<>>, {next_state, open, NewState1, ?CONNECT_TIMEOUT});
 	_ ->
-	   {next_state, setup, State, ?RECONNECT_TIMEOUT}
+	   {next_state, setup, NewState0, ?RECONNECT_TIMEOUT}
     end.
 
 open({hello, Version, Xid, _Msg}, State) 
@@ -413,6 +419,14 @@ handle_info({tcp, Socket, Data}, StateName, #state{socket = Socket} = State) ->
 	    NextState = lists:foldl(fun(M, StateX) -> exec_async(M, StateX) end, element(3, Reply), Next),
 	    setelement(3, Reply, NextState)
     end;
+
+handle_info({tcp_closed, Socket}, _StateName, #state{role = client,
+						     transport = TransportMod,
+						     socket = Socket} = State) ->
+    error_logger:info_msg("Server Disconnected."),
+    TransportMod:close(State#state.socket),
+    NewState = State#state{socket = undefined, pending = <<>>, features = undefined},
+    {next_state, setup, NewState, ?RECONNECT_TIMEOUT};
 
 handle_info({tcp_closed, Socket}, _StateName, #state{socket = Socket} = State) ->
     error_logger:info_msg("Client Disconnected."),
