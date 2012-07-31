@@ -23,7 +23,7 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0]).
+-export([start_link/0, start_listener/2]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -38,6 +38,11 @@
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
+%% start a listener process for the given transport module with arguments
+start_listener(TransportMod, Arguments) ->
+    Spec = TransportMod:listener_spec(Arguments),
+    supervisor:start_child(?MODULE, Spec).
+
 %% ===================================================================
 %% Supervisor callbacks
 %% ===================================================================
@@ -48,7 +53,6 @@ init([]) ->
 				 ?CHILD(flower_dispatcher, worker),
 				 ?CHILD(flower_mac_learning, worker),
 				 ?CHILD(flower_component_sup, supervisor),
-				 ?CHILD(flower_datapath_sup, supervisor),
-				 ?CHILD(flower_tcp_socket, worker)
+				 ?CHILD(flower_datapath_sup, supervisor)
 				]} }.
 

@@ -21,7 +21,7 @@
 -module(flower_datapath).
 
 -behaviour(gen_fsm).
-
+-define(debug, true).
 %% --------------------------------------------------------------------
 %% Include files
 %% --------------------------------------------------------------------
@@ -29,9 +29,9 @@
 -include("flower_packet.hrl").
 -include("flower_datapath.hrl").
 
-%% API
--export([start_link/0]).
--export([start_connection/0, accept/2, send/3, send/4]).
+%% internal API
+-export([start_link/1]).
+-export([start_connection/1, accept/2, connect/2, send/3, send/4]).
 
 %% gen_fsm callbacks
 -export([init/1, handle_event/3,
@@ -41,8 +41,13 @@
 -export([counters/0, counters/1]).
 
 -define(SERVER, ?MODULE).
+-define(VERSION, 3).
 
 -record(state, {
+	  transport,
+	  role = server,
+	  version = ?VERSION,
+
 	  xid = 1,
 	  socket,
 	  pending = <<>>,
@@ -51,16 +56,11 @@
 	 }).
 
 
--define(STARTUP_TIMEOUT, 10000).     %% wait 10sec for someone to tell us what to do
--define(CONNECT_TIMEOUT, 30000).     %% wait 30sec for the first packet to arrive
--define(REQUEST_TIMEOUT, 10000).     %% wait 10sec for answer
--define(TCP_OPTS, [binary, inet6,
-                   {active,       false},
-		   {send_timeout, 5000},
-                   {backlog,      10},
-                   {nodelay,      true},
-                   {packet,       raw},
-                   {reuseaddr,    true}]).
+-define(STARTUP_TIMEOUT, 10000).        %% wait 10sec for someone to tell us what to do
+-define(CONNECT_SETUP_TIMEOUT, 1000).   %% wait  1sec for the transport connection to establish
+-define(RECONNECT_TIMEOUT, 10000).      %% retry after 10sec when a transport connect failed
+-define(CONNECT_TIMEOUT, 30000).        %% wait 30sec for the first packet to arrive
+-define(REQUEST_TIMEOUT, 10000).        %% wait 10sec for answer
 
 -ifdef(debug).
 -define(FSM_OPTS,{debug,[trace]}).
@@ -81,14 +81,23 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link() ->
-    gen_fsm:start_link(?MODULE, [], [?FSM_OPTS]).
+start_link(TransportMod) ->
+    gen_fsm:start_link(?MODULE, TransportMod, [?FSM_OPTS]).
 
-start_connection() ->
-    flower_datapath_sup:start_connection().
+connect(TransportMod, Arguments) ->
+    case flower_datapath:start_connection(TransportMod) of
+	{ok, Pid} ->
+	    gen_fsm:send_event(Pid, {connect, Arguments}),
+	    {ok, Pid};
+	Error ->
+	    Error
+    end.
+
+start_connection(TransportMod) ->
+    flower_datapath_sup:start_connection(TransportMod).
+
 
 accept(Server, Socket) ->
-    gen_tcp:controlling_process(Socket, Server),
     gen_fsm:send_event(Server, {accept, Socket}).
 
 send(Sw, Type, Msg) ->
@@ -143,12 +152,14 @@ install_flow(Sw, Match, Cookie, IdleTimeout, HardTimeout,
 send_packet(Sw, Packet, Actions, InPort) when is_list(Actions) ->
     case lists:keymember(ofp_action_output, 1, Actions) of
         true ->
-            ActionsBin = flower_packet:encode_actions(Actions),
-            PktOut = flower_packet:encode_ofp_packet_out(16#FFFFFFFF, InPort, ActionsBin, Packet),
+	    PktOut = #ofp_packet_out{buffer_id = 16#FFFFFFFF,
+				     in_port = InPort,
+				     actions = Actions,
+				     data = Packet},
             send(Sw, packet_out, PktOut);
         false ->
-						% packet is unbuffered and not forwarded -> no need to send it to
-						% the datapath
+	    %% packet is unbuffered and not forwarded -> no need to send it to
+	    %% the datapath
             ok
     end;
 send_packet(Sw, Packet, Action, InPort) ->
@@ -160,8 +171,10 @@ send_packet(Sw, Packet, Action, InPort) ->
 %% @end
 %%--------------------------------------------------------------------
 send_buffer(Sw, BufferId, Actions, InPort) ->
-    ActionsBin = flower_packet:encode_actions(Actions),
-    PktOut = flower_packet:encode_ofp_packet_out(BufferId, InPort, ActionsBin, <<>>),
+    PktOut = #ofp_packet_out{buffer_id = BufferId,
+			     in_port = InPort,
+			     actions = Actions,
+			     data = <<>>},
     send(Sw, packet_out, PktOut).
 
 %%--------------------------------------------------------------------
@@ -204,9 +217,9 @@ portinfo(Sw, Port) ->
 %%                     {stop, StopReason}
 %% @end
 %%--------------------------------------------------------------------
-init([]) ->
+init(TransportMod) ->
     process_flag(trap_exit, true),
-    {ok, setup, #state{}, ?STARTUP_TIMEOUT}.
+    {ok, setup, #state{transport = TransportMod}, ?STARTUP_TIMEOUT}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -225,42 +238,60 @@ init([]) ->
 %%--------------------------------------------------------------------
 setup({accept, Socket}, State) ->
     ?DEBUG("got setup~n"),
-    NewState = State#state{socket = Socket},
+    NewState = State#state{role = server, socket = Socket},
     ?DEBUG("NewState: ~p~n", [NewState]),
-    send_request(hello, <<>>, {next_state, open, NewState, ?CONNECT_TIMEOUT}).
+    send_request(hello, <<>>, {next_state, open, NewState, ?CONNECT_TIMEOUT});
 
-open({hello, _Xid, _Msg}, State) ->
+setup({connect, Arguments}, State = #state{transport = TransportMod}) ->
+    case TransportMod:connect(Arguments, ?CONNECT_SETUP_TIMEOUT) of
+	{ok, Socket} ->
+	    NewState = State#state{role = client, socket = Socket},
+	    ?DEBUG("NewState: ~p~n", [NewState]),
+	    send_request(hello, <<>>, {next_state, open, NewState, ?CONNECT_TIMEOUT});
+	_ ->
+	   {next_state, setup, State, ?RECONNECT_TIMEOUT}
+    end.
+
+open({hello, Version, Xid, _Msg}, State) 
+  when Version > ?VERSION ->
     ?DEBUG("got hello in open"),
-    send_request(features_request, <<>>, {next_state, connecting, State, ?REQUEST_TIMEOUT}).
+    Reply = #ofp_error{error = hello_failed, data = incompatible},
+    send_pkt(error, Xid, Reply, {stop, normal, State});
 
-connecting({features_reply, Xid, Msg}, State) ->
+open({hello, Version, _Xid, _Msg}, State) ->
+    ?DEBUG("got hello in open"),
+    %% Accept their Idea of version if we support it
+    NewState = State#state{version = Version},
+    send_request(features_request, <<>>, {next_state, connecting, NewState, ?REQUEST_TIMEOUT}).
+
+connecting({features_reply, _Version, Xid, Msg}, State) ->
     ?DEBUG("got features_reply in connected"),
     flower_dispatcher:dispatch({datapath, join}, self(), Msg),
     {next_state, connected, State#state{features = Msg}};
 
-connecting({echo_request, Xid, _Msg}, State) ->
+connecting({echo_request, _Version, Xid, _Msg}, State) ->
     send_pkt(echo_reply, Xid, <<>>, {next_state, connected, State}).
 
-connected({features_reply, _Xid, Msg}, State) ->
+connected({features_reply, _Version, _Xid, Msg}, State) ->
     ?DEBUG("got features_reply in connected"),
     {next_state, connected, State#state{features = Msg}};
 
-connected({echo_request, Xid, _Msg}, State) ->
+connected({echo_request, _Version, Xid, _Msg}, State) ->
     send_pkt(echo_reply, Xid, <<>>, {next_state, connected, State});
 
-connected({packet_in, Xid, Msg}, State) ->
+connected({packet_in, _Version, Xid, Msg}, State) ->
     flower_dispatcher:dispatch({packet, in}, self(), Msg),
     {next_state, connected, State};
 
-connected({flow_removed, Xid, Msg}, State) ->
+connected({flow_removed, _Version, Xid, Msg}, State) ->
     flower_dispatcher:dispatch({flow, removed}, self(), Msg),
     {next_state, connected, State};
 
-connected({port_status, Xid, Msg}, State) ->
+connected({port_status,_Version,  Xid, Msg}, State) ->
     flower_dispatcher:dispatch({port, status}, self(), Msg),
     {next_state, connected, State};
 
-connected({stats_reply, Xid, Msg}, State) ->
+connected({stats_reply, _Version, Xid, Msg}, State) ->
     flower_dispatcher:dispatch({port, stats}, self(), Msg),
     {next_state, connected, State};
 
@@ -354,8 +385,8 @@ handle_sync_event(_Event, _From, StateName, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_info({tcp, Socket, Data}, StateName, #state{socket = Socket} = State) ->
-    ?DEBUG("handle_info: ~p~n", [Data]),
-    {Msg, DataRest} = flower_packet:decode(<<(State#state.pending)/binary, Data/binary>>),
+    io:format(flower_tools:hexdump(Data)),
+    {Msg, DataRest} = decode_of_pkt(<<(State#state.pending)/binary, Data/binary>>, State),
     State0 = inc_counter(State, recv, raw_packets),
     State1 = State0#state{pending = DataRest},
     ?DEBUG("handle_info: decoded: ~p~nrest: ~p~n", [Msg, DataRest]),
@@ -398,7 +429,7 @@ handle_info({tcp_closed, Socket}, _StateName, #state{socket = Socket} = State) -
 %% @spec terminate(Reason, StateName, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(_Reason, StateName, State) ->
+terminate(_Reason, StateName, State = #state{transport = TransportMod}) ->
     ?DEBUG("terminate"),
     case StateName of
 	connected ->
@@ -406,7 +437,7 @@ terminate(_Reason, StateName, State) ->
 	_ ->
 	    ok
     end,
-    gen_tcp:close(State#state.socket),
+    TransportMod:close(State#state.socket),
     ok.
 
 %%--------------------------------------------------------------------
@@ -425,30 +456,17 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-exec_sync(#ovs_msg{type = Type, xid = Xid, msg = Msg}, StateName, State) ->
+exec_sync(#ovs_msg{version = Version, type = Type, xid = Xid, msg = Msg}, StateName, State) ->
     State0 = inc_counter(State, recv, Type),
-    ?MODULE:StateName({Type, Xid, Msg}, State0).
+    ?MODULE:StateName({Type, Version, Xid, Msg}, State0).
 
-exec_async(#ovs_msg{type = Type, xid = Xid, msg = Msg}, State) ->
+exec_async(#ovs_msg{version = Version, type = Type, xid = Xid, msg = Msg}, State) ->
     State0 = inc_counter(State, recv, Type),
-    gen_fsm:send_event(self(), {Type, Xid, Msg}),
+    gen_fsm:send_event(self(), {Type, Version, Xid, Msg}),
     State0.
 
 inc_xid(State) ->
     State#state{xid = State#state.xid + 1}.
-
-send_hello(State) ->
-    State0 = inc_counter(State, send, hello),
-    State1 = inc_counter(State0, send, raw_packets),
-    NewState = inc_xid(State1),
-    Packet = flower_packet:encode(#ovs_msg{version = 1, type = hello, xid = NewState#state.xid, msg = <<>>}),
-
-    case gen_tcp:send(State0#state.socket, Packet) of
-	ok ->
-	    {ok, NewState};
-	{error, Reason} ->
-	    {error, Reason, NewState}
-    end.
 
 send_request(Type, Msg, NextStateInfo) ->
     State = element(3, NextStateInfo),
@@ -460,13 +478,13 @@ send_pkt(Type, Xid, Msg, NextStateInfo) ->
     State0 = element(3, NextStateInfo),
     State1 = inc_counter(State0, send, raw_packets),
     NewState = inc_counter(State1, send, Type),
+    TransportMod = NewState#state.transport,
     Socket = NewState#state.socket,
 
-    Packet = flower_packet:encode(#ovs_msg{version = 1, type = Type, xid = Xid, msg = Msg}),
+    Packet = build_of_pkt(Type, Xid, Msg, NewState),
 
-    case gen_tcp:send(Socket, Packet) of
+    case TransportMod:send(Socket, Packet) of
 	ok ->
-	    ok = inet:setopts(Socket, [{active, once}]),
 	    setelement(3, NextStateInfo, NewState);
 	{error, Reason} ->
 	    ?DEBUG("error - Reason: ~p~n", [Reason]),
@@ -501,9 +519,40 @@ send_pkt(Type, Xid, Msg, NextStateInfo) ->
 ?INC_COUNTER(barrier_reply);
 ?INC_COUNTER(queue_get_config_request);
 ?INC_COUNTER(queue_get_config_reply);
+?INC_COUNTER(role_request);
+?INC_COUNTER(role_reply);
 do_inc_counter(Counter, _) -> Counter#flower_datapath_counter{unknown = Counter#flower_datapath_counter.unknown + 1}.
 
 inc_counter(State = #state{counters = Counters}, send, Field) ->
     State#state{counters = Counters#flower_datapath_counters{send = do_inc_counter(Counters#flower_datapath_counters.send, Field)}};
 inc_counter(State = #state{counters = Counters}, recv, Field) ->
     State#state{counters = Counters#flower_datapath_counters{recv = do_inc_counter(Counters#flower_datapath_counters.recv, Field)}}.
+
+build_of_pkt(Type, Xid, Msg, #state{version = Version})
+  when Version == 1 ->
+    flower_packet:encode(#ovs_msg{version = Version, type = Type, xid = Xid, msg = Msg});
+
+build_of_pkt(Type, Xid, Msg, #state{version = Version})
+  when Version == 2 ->
+    flower_packet_v11:encode(#ovs_msg{version = Version, type = Type, xid = Xid, msg = Msg});
+
+build_of_pkt(Type, Xid, Msg, #state{version = Version})
+  when Version == 3 ->
+    flower_packet_v12:encode(#ovs_msg{version = Version, type = Type, xid = Xid, msg = Msg}).
+
+decode_of_pkt(Data, #state{version = Version})
+  when Version == 1 ->
+    flower_packet:decode(Data);
+
+decode_of_pkt(Data, #state{version = Version})
+  when Version == 2 ->
+    flower_packet_v11:decode(Data);
+
+decode_of_pkt(Data, #state{version = Version})
+  when Version == 3 ->
+    flower_packet_v12:decode(Data);
+
+decode_of_pkt(Data, _State) ->
+    %% best effort try even when the version it to high,
+    %% really for hello only....
+    flower_packet_v12:decode(Data).
