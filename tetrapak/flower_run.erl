@@ -5,6 +5,7 @@
 run("run:flower", _) ->
 	tetrapak:require("build:erlang"),
 	application:start(sasl),
-	application:start(gen_netlink),
 	application:start(gen_listener_tcp),
+	application:start(regine),
+	application:start(flower),
 	ok.
