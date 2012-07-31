@@ -25,6 +25,7 @@
 -export([ip_to_tuple/1, tuple_to_ip/1]).
 -export([format_ip/1, format_mac/1]).
 -export([format_flow/1]).
+-export([hexdump/1]).
 
 flat_format(Format, Data) ->
     lists:flatten(io_lib:format(Format, Data)).
@@ -67,3 +68,22 @@ format_flow(#flow{tun_id = TunId, nw_src = NwSrc, nw_dst = NwDst, in_port = InPo
     flat_format("Flow: tun_id = ~w, nw_src = ~s, nw_dst = ~s, in_port = ~w, vlan_tci = ~w, dl_type = ~w, tp_src = ~w, tp_dst = ~w, dl_src = ~s, dl_dst = ~s, nw_proto = ~w, nw_tos = ~w",
 		[TunId, format_ip(NwSrc), format_ip(NwDst), InPort, VlanTci, DlType, TpSrc, TpDst, format_mac(DlSrc), format_mac(DlDst), NwProto, NwTos]).
 
+
+hexdump(Line, Part) ->
+       L0 = [io_lib:format(" ~2.16.0B", [X]) || <<X:8>> <= Part],
+       L1 = lists:flatten(L0),
+       io_lib:format("~4.16.0B:~s~n", [Line * 16, L0]).
+       
+hexdump(Line, <<>>, Out) ->
+       lists:flatten(lists:reverse(Out));
+hexdump(Line, <<Part:16/bytes, Rest/binary>>, Out) ->
+       L1 = hexdump(Line, Part),
+       hexdump(Line + 1, Rest, [L1|Out]);
+hexdump(Line, <<Part/binary>>, Out) ->
+       L1 = hexdump(Line, Part),
+       hexdump(Line + 1, <<>>, [L1|Out]).
+
+hexdump(List) when is_list(List) ->
+       hexdump(0, list_to_binary(List), []);
+hexdump(Bin) when is_binary(Bin)->
+       hexdump(0, Bin, []).
