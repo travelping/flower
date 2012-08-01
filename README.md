@@ -8,7 +8,7 @@ Installation
 ------------
 
 FlowER is build for deployment model that packages each Erlang
-application either as RPM or DEB package. Dependencie resolution
+application either as RPM or DEB package. Dependency resolution
 is done at install time and at build time to the package management
 tools. For manual building, the required dependencies therefore have to be
 installed manually.
