@@ -725,7 +725,7 @@ decode_msg(set_config, <<Flags:16/integer, MissSendLen:16/integer>>) ->
 
 decode_msg(packet_in, <<BufferId:32/integer, TotalLen:16/integer, Reason:8/integer, TableId:8/integer, Rest/binary>>) ->
     <<_MatchType:16/integer, MatchLength:16/integer, _/binary>> = Rest,
-    PadLength = pad_length(8, MatchLength) + 2 + 4, %%FIXME: rofl bug!!!
+    PadLength = pad_length(8, MatchLength) + 2,
     <<Match:MatchLength/bytes, _Pad:PadLength/bytes, Data/binary>> = Rest,
 
     #ofp_packet_in_v12{buffer_id = BufferId, total_len = TotalLen, reason = ofp_packet_in_reason(Reason),
