@@ -103,9 +103,7 @@ handle_call(_Request, _From, State) ->
 %%--------------------------------------------------------------------
 handle_cast({{packet, in}, Sw, Msg}, State) ->
     case Flow = (catch flower_flow:flow_extract(0, Msg#ofp_packet_in.in_port, Msg#ofp_packet_in.data)) of
-	#flow{tun_id = TunId, nw_src = NwSrc, nw_dst = NwDst, in_port = InPort, vlan_tci = VlanTci,
-	      dl_type = DlType, tp_src = TpSrc, tp_dst = TpDst, dl_src = DlSrc, dl_dst = DlDst,
-	      nw_proto = NwProto, nw_tos = NwTos, arp_sha = ArpSha, arp_tha = ArpTha} ->
+	#flow{} ->
 	    %% choose destination...
 	    Port = choose_destination(Flow),
 	    Actions = case Port of
@@ -178,12 +176,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-format_mac(<<A:8,B:8,C:8,D:8,E:8,F>>) ->
-    lists:flatten(io_lib:format("~2.16.0B:~2.16.0B:~2.16.0B:~2.16.0B:~2.16.0B:~2.16.0B", [A,B,C,D,E,F])).
-
-format_ip(<<A:8,B:8,C:8,D:8>>) ->
-    lists:flatten(io_lib:format("~B.~B.~B.~B", [A,B,C,D])).
-
 choose_destination(#flow{in_port = Port, dl_src = DlSrc, dl_dst = DlDst} = _Flow) ->
     OutPort = case flower_mac_learning:eth_addr_is_reserved(DlSrc) of
 		  false -> learn_mac(DlSrc, 0, Port),
@@ -201,7 +193,7 @@ learn_mac(DlSrc, VLan, Port) ->
 	end,
     if
 	R =:= new; R =:= updated ->
-            ?DEBUG("~p: learned that ~s is on port ~w", [self(), format_mac(DlSrc), Port]),
+            ?DEBUG("~p: learned that ~s is on port ~w", [self(), flower_tools:format_mac(DlSrc), Port]),
 	    ok;
 	true ->
 	    ok
