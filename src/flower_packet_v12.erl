@@ -688,11 +688,11 @@ ofp_vendor_stats_type(VendorStatsType)	-> VendorStatsType.
 		   ({atom(), non_neg_integer()}) -> of_vendor_ext().
 of_vendor_ext(VendorExt) ->	VendorExt.
 
-protocol(NwProto)
-  when is_atom(NwProto) ->
-    gen_socket:protocol(NwProto);
-protocol(NwProto) ->
-    NwProto.
+%% protocol(NwProto)
+%%   when is_atom(NwProto) ->
+%%     gen_socket:protocol(NwProto);
+%% protocol(NwProto) ->
+%%     NwProto.
 
 %%%===================================================================
 %%% Decode
