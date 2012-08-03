@@ -42,7 +42,7 @@ decode_packet(<<DlDst:?ETH_ADDR_LEN/bytes, DlSrc:?ETH_ADDR_LEN/bytes, 16#8100:16
 	      Flow) ->
     decode_ethertype(EtherType, PayLoad, Flow#flow{vlan_tci = {PCP, VID}, dl_src = DlSrc, dl_dst = DlDst});
 
-decode_packet(<<DlDst:?ETH_ADDR_LEN/bytes, DlSrc:?ETH_ADDR_LEN/bytes, EtherType:16/integer, PayLoad/binary>> = Pkt,
+decode_packet(<<DlDst:?ETH_ADDR_LEN/bytes, DlSrc:?ETH_ADDR_LEN/bytes, EtherType:16/integer, PayLoad/binary>>,
 	      Flow) ->
     decode_ethertype(flower_packet:eth_type(EtherType), PayLoad, Flow#flow{dl_src = DlSrc, dl_dst = DlDst}).
 
