@@ -71,10 +71,9 @@ format_flow(#flow{tun_id = TunId, nw_src = NwSrc, nw_dst = NwDst, in_port = InPo
 
 hexdump(Line, Part) ->
        L0 = [io_lib:format(" ~2.16.0B", [X]) || <<X:8>> <= Part],
-       L1 = lists:flatten(L0),
        io_lib:format("~4.16.0B:~s~n", [Line * 16, L0]).
        
-hexdump(Line, <<>>, Out) ->
+hexdump(_, <<>>, Out) ->
        lists:flatten(lists:reverse(Out));
 hexdump(Line, <<Part:16/bytes, Rest/binary>>, Out) ->
        L1 = hexdump(Line, Part),
