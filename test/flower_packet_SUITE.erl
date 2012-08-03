@@ -224,75 +224,76 @@ suite() ->
 
 test_hello_request(_Config) ->
 	Sw = #ovs_msg{version = 1, type = hello, xid = 8, msg = <<>>},
-	[Sw] = flower_packet:decode(flower_packet:encode(Sw)),
+	{[Sw],_} = flower_packet:decode(flower_packet:encode(Sw)),
 	ok.
 
 test_echo_request(_Config) ->
 	Sw = #ovs_msg{version = 1, type = echo_request, xid = 8, msg = <<>>},
-	[Sw] = flower_packet:decode(flower_packet:encode(Sw)),
+	{[Sw],_} = flower_packet:decode(flower_packet:encode(Sw)),
 	ok.
 
 test_echo_reply(_Config) ->
 	Sw = #ovs_msg{version = 1, type = echo_reply, xid = 8, msg = <<>>},
-	[Sw] = flower_packet:decode(flower_packet:encode(Sw)),
+	{[Sw],_} = flower_packet:decode(flower_packet:encode(Sw)),
 	ok.
 
 test_switch_features_request(_Config) ->
 	Sw = #ovs_msg{version = 1, type = features_request, xid = 2, msg = <<>>},
-	[Sw] = flower_packet:decode(flower_packet:encode(Sw)),
+	{[Sw],_} = flower_packet:decode(flower_packet:encode(Sw)),
 	ok.
 
 test_switch_features_reply(_Config) ->
 	Sw = ofp_switch_features_reply(),
-	[#ovs_msg{msg = #ofp_switch_features{}}] = flower_packet:decode(Sw),
-	Sw = flower_packet:encode(flower_packet:decode(Sw)),
+	{[Msg = #ovs_msg{msg = #ofp_switch_features{}}],_} = flower_packet:decode(Sw),
+	Sw = flower_packet:encode(Msg),
 	ok.
 
 test_packet_out(_Config) ->
 	Sw = ofp_packet_out(),
-	[#ovs_msg{msg = #ofp_packet_out{}}] = flower_packet:decode(Sw),
-	Sw = flower_packet:encode(flower_packet:decode(Sw)),
+	{[Msg = #ovs_msg{msg = #ofp_packet_out{}}],_} = flower_packet:decode(Sw),
+	Sw = flower_packet:encode(Msg),
 	ok.
 
 test_packet_in(_Config) ->
 	Sw = ofp_packet_in(),
-	[#ovs_msg{msg = #ofp_packet_in{}}] = flower_packet:decode(Sw),
+	{[Msg = #ovs_msg{msg = #ofp_packet_in{}}],_} = flower_packet:decode(Sw),
+	Sw = flower_packet:encode(Msg),
 	ok.
 	
 test_flow_mod_add(_Config) ->
 	Sw = ofp_flow_mod_add(),
-	[#ovs_msg{msg = #ofp_flow_mod{}}] = flower_packet:decode(Sw),
-	Sw = flower_packet:encode(flower_packet:decode(Sw)),
+	{[Msg = #ovs_msg{msg = #ofp_flow_mod{}}],_} = flower_packet:decode(Sw),
+	Sw = flower_packet:encode(Msg),
 	ok.
 
 test_flow_removed(_Config) ->
 	Sw = ofp_flow_removed(),
-	[#ovs_msg{msg = #ofp_flow_removed{}}|[#ovs_msg{msg = #ofp_flow_removed{}}]] = flower_packet:decode(Sw),
-	Sw = flower_packet:encode(flower_packet:decode(Sw)),
+	{Msg = [#ovs_msg{msg = #ofp_flow_removed{}}|[#ovs_msg{msg = #ofp_flow_removed{}}]],_} = flower_packet:decode(Sw),
+	Sw = flower_packet:encode(Msg),
 	ok.
 
 test_port_status_cfg_down(_Config) ->
 	Sw = ofp_port_status_cfg_down(),
-	[#ovs_msg{msg = #ofp_port_status{}}] = flower_packet:decode(Sw),
-	Sw = flower_packet:encode(flower_packet:decode(Sw)),
+	{[Msg = #ovs_msg{msg = #ofp_port_status{}}],_} = flower_packet:decode(Sw),
+	Sw = flower_packet:encode(Msg),
 	ok.
 
 test_port_status_lnk_down(_Config) ->
 	Sw = ofp_port_status_lnk_down(),
-	[#ovs_msg{msg = #ofp_port_status{}}] = flower_packet:decode(Sw),
-	Sw = flower_packet:encode(flower_packet:decode(Sw)),
+	{[Msg = #ovs_msg{msg = #ofp_port_status{}}],_} = flower_packet:decode(Sw),
+	Sw = flower_packet:encode(Msg),
 	ok.
 
 test_port_status_lnk_up(_Config) ->
 	Sw = ofp_port_status_lnk_up(),
-	[#ovs_msg{msg = #ofp_port_status{}}] = flower_packet:decode(Sw),
-	Sw = flower_packet:encode(flower_packet:decode(Sw)),
+	{[Msg = #ovs_msg{msg = #ofp_port_status{}}],_} = flower_packet:decode(Sw),
+	Sw = flower_packet:encode(Msg),
 	ok.
 
 test_set_config(_Config) ->
 	Sw = ofp_set_config(),
-	[#ovs_msg{msg = #ofp_switch_config{}}] = flower_packet:decode(Sw),
-	Sw = flower_packet:encode(flower_packet:decode(Sw)),
+	{[Msg = #ovs_msg{msg = #ofp_switch_config{}}],_} = flower_packet:decode(Sw),
+	Sw = flower_packet:encode(Msg),
 	ok.
 
 test_flow_mod(_Config) ->
@@ -378,7 +379,7 @@ test_nx_flow_mod(_Config) ->
 						   priority = 1, buffer_id = 0, out_port = local, flags = [], nx_match = NxMatches, actions = Actions},
 	MOut = #ovs_msg{version = 1, type = vendor, xid = 1, msg = FlowMod},
 	Pkt = flower_packet:encode(MOut),
-	[MIn] = flower_packet:decode(Pkt),
+	{[MIn],_} = flower_packet:decode(Pkt),
 	MOut = MIn,
 	ok.
 
@@ -425,14 +426,14 @@ test_nxst_flow_stats_request(_Config) ->
 	FlowStats = #ofp_nxst_flow_stats_request{out_port = none, table_id = all, nx_match = NxMatches},
 	MOut = #ovs_msg{version = 1, type = stats_request, xid = 1, msg = FlowStats},
 	Pkt = flower_packet:encode(MOut),
-	[MIn] = flower_packet:decode(Pkt),
+	{[MIn],_} = flower_packet:decode(Pkt),
 	MOut = MIn,
 	ok.
 
 test_nxst_flow_stats(_Config) ->
 	Sw = ofp_nxst_flow_stats(),
-	[#ovs_msg{msg = [#ofp_nxst_flow_stats{}|_R]}] = flower_packet:decode(Sw),
-	Sw = flower_packet:encode(flower_packet:decode(Sw)),
+	{[Msg = #ovs_msg{msg = [#ofp_nxst_flow_stats{}|_R]}],_} = flower_packet:decode(Sw),
+	Sw = flower_packet:encode(Msg),
 	ok.
 
 test_stats_req(_Config) ->
