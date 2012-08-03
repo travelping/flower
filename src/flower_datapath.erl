@@ -270,7 +270,7 @@ open({hello, Version, _Xid, _Msg}, State) ->
     NewState = State#state{version = Version},
     send_request(features_request, <<>>, {next_state, connecting, NewState, ?REQUEST_TIMEOUT}).
 
-connecting({features_reply, _Version, Xid, Msg}, State) ->
+connecting({features_reply, _Version, _Xid, Msg}, State) ->
     ?DEBUG("got features_reply in connected"),
     flower_dispatcher:dispatch({datapath, join}, self(), Msg),
     {next_state, connected, State#state{features = Msg}};
@@ -285,19 +285,19 @@ connected({features_reply, _Version, _Xid, Msg}, State) ->
 connected({echo_request, _Version, Xid, _Msg}, State) ->
     send_pkt(echo_reply, Xid, <<>>, {next_state, connected, State});
 
-connected({packet_in, _Version, Xid, Msg}, State) ->
+connected({packet_in, _Version, _Xid, Msg}, State) ->
     flower_dispatcher:dispatch({packet, in}, self(), Msg),
     {next_state, connected, State};
 
-connected({flow_removed, _Version, Xid, Msg}, State) ->
+connected({flow_removed, _Version, _Xid, Msg}, State) ->
     flower_dispatcher:dispatch({flow, removed}, self(), Msg),
     {next_state, connected, State};
 
-connected({port_status,_Version,  Xid, Msg}, State) ->
+connected({port_status,_Version,  _Xid, Msg}, State) ->
     flower_dispatcher:dispatch({port, status}, self(), Msg),
     {next_state, connected, State};
 
-connected({stats_reply, _Version, Xid, Msg}, State) ->
+connected({stats_reply, _Version, _Xid, Msg}, State) ->
     flower_dispatcher:dispatch({port, stats}, self(), Msg),
     {next_state, connected, State};
 
