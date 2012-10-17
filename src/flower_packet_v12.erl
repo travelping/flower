@@ -1640,23 +1640,28 @@ encode_stats_reply(Reply, RecType) ->
     encode_ofp_stats(Type, Body).
 
 encode_ofp_match(Match) ->
-    << << (encode_oxm_tlv(TLV))/binary >> || TLV <- Match >>.
+    Fields = << << (encode_oxm_tlv(TLV))/binary >> || TLV <- Match >>,
+    Length = byte_size(Fields),
+    pad_to(8, <<1:16, Length:16, Fields/binary>>).
 
 -define(ENCODE_OXM_TLV(Class, Field, Length, Type, Atom),
 	encode_oxm_tlv({Atom, Value}) ->
-	       <<Class:16/integer, Field:7/integer, 0:1, Length:8/integer, Value:Length/Type>>).
+	       <<Class:16/integer, Field:7/integer, 0:1, (Length div 8):8/integer, Value:Length/Type>>).
 
 -define(ENCODE_OXM_MASK_TLV(Class, Field, Length, Type, Atom),
 	encode_oxm_tlv({Atom, Value, Mask}) ->
-	       <<Class:16/integer, Field:7/integer, 1:1, (Length * 2):8/integer,
+	       <<Class:16/integer, Field:7/integer, 1:1, (Length div 4):8/integer,
 		 Value:Length/Type, Mask:Length/Type>>).
 
 ?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IN_PORT, 32, integer, in_port);
 ?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IN_PHY_PORT, 32, integer, in_phy_port);
-?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_METADATA, 64, binary, metadata);
-?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ETH_DST, 48, binary, eth_dst);
-?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ETH_SRC, 48, binary, eth_src);
-?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ETH_TYPE, 16, binary, eth_type);
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_METADATA, 64, bits, metadata);
+?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_METADATA, 64, bits, metadata);
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ETH_DST, 48, bits, eth_dst);
+?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ETH_DST, 48, bits, eth_dst);
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ETH_SRC, 48, bits, eth_src);
+?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ETH_SRC, 48, bits, eth_src);
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ETH_TYPE, 16, bits, eth_type);
 
 encode_oxm_tlv({vlan_vid, none}) ->
     <<?OFPXMC_OPENFLOW_BASIC:16, ?OFPXMT_OFB_VLAN_VID:7, 0:1, 2:8, 16#0000:2>>;
@@ -1667,7 +1672,7 @@ encode_oxm_tlv({vlan_vid, present}) ->
 encode_oxm_tlv({vlan_vid, Value}) ->
     <<?OFPXMC_OPENFLOW_BASIC:16, ?OFPXMT_OFB_VLAN_VID:7, 0:1, 2:8, Value:2>>;
 
-?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_VLAN_VID, 2, binary, vlan_vid);
+?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_VLAN_VID, 2, bits, vlan_vid);
 
 encode_oxm_tlv({vlan_pcp, Value}) ->
     <<?OFPXMC_OPENFLOW_BASIC:16, ?OFPXMT_OFB_VLAN_PCP:7, 0:1, 1:8, 0:5, Value:3>>;
@@ -1679,8 +1684,10 @@ encode_oxm_tlv({ip_ecn, Value}) ->
     <<?OFPXMC_OPENFLOW_BASIC:16, ?OFPXMT_OFB_IP_ECN:7, 0:1, 1:8, 0:6, Value:2>>;
 
 ?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IP_PROTO, 8, integer, ip_proto);
-?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IPV4_SRC, 32, binary, ipv4_src);
-?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IPV4_DST, 32, binary, ipv4_dst);
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IPV4_SRC, 32, bits, ipv4_src);
+?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IPV4_SRC, 32, bits, ipv4_src);
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IPV4_DST, 32, bits, ipv4_dst);
+?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IPV4_DST, 32, bits, ipv4_dst);
 ?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_TCP_SRC, 16, integer, tcp_src);
 ?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_TCP_DST, 16, integer, tcp_dst);
 ?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_UDP_SRC, 16, integer, udp_src);
@@ -1690,27 +1697,38 @@ encode_oxm_tlv({ip_ecn, Value}) ->
 ?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ICMPV4_TYPE, 8, integer, icmpv4_type);
 ?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ICMPV4_CODE, 8, integer, icmpv4_code);
 ?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ARP_OP, 16, integer, arp_op);
-?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ARP_SPA, 32, binary, arp_spa);
-?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ARP_TPA, 32, binary, arp_tpa);
-?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ARP_SHA, 48, binary, arp_sha);
-?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ARP_THA, 48, binary, arp_tha);
-?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IPV6_SRC, 128, binary, ipv6_src);
-?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IPV6_DST, 128, binary, ipv6_dst);
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ARP_SPA, 32, bits, arp_spa);
+?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ARP_SPA, 32, bits, arp_spa);
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ARP_TPA, 32, bits, arp_tpa);
+?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ARP_TPA, 32, bits, arp_tpa);
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ARP_SHA, 48, bits, arp_sha);
+?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ARP_SHA, 48, bits, arp_sha);
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ARP_THA, 48, bits, arp_tha);
+?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ARP_THA, 48, bits, arp_tha);
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IPV6_SRC, 128, bits, ipv6_src);
+?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IPV6_SRC, 128, bits, ipv6_src);
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IPV6_DST, 128, bits, ipv6_dst);
+?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IPV6_DST, 128, bits, ipv6_dst);
 
 encode_oxm_tlv({ipv6_flabel, Value, Mask}) ->
     <<?OFPXMC_OPENFLOW_BASIC:16, ?OFPXMT_OFB_IPV6_FLABEL:7, 1:1, 8:8, 0:4, Value:20, 0:4, Mask:20>>;
 
 ?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ICMPV6_TYPE, 8, integer, icmpv6_type);
 ?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ICMPV6_CODE, 8, integer, icmpv6_code);
-?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IPV6_ND_TARGET, 128, binary, ipv6_nd_target);
-?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IPV6_ND_SLL, 48, binary, ipv6_nd_sll);
-?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IPV6_ND_TLL, 48, binary, ipv6_nd_tll);
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IPV6_ND_TARGET, 128, bits, ipv6_nd_target);
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IPV6_ND_SLL, 48, bits, ipv6_nd_sll);
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IPV6_ND_TLL, 48, bits, ipv6_nd_tll);
 
 encode_oxm_tlv({mpls_flabel, Value}) ->
     <<?OFPXMC_OPENFLOW_BASIC:16, ?OFPXMT_OFB_MPLS_LABEL:7, 1:1, 4:8, 0:4, Value:20>>;
 
 encode_oxm_tlv({mpls_tc, Value}) ->
     <<?OFPXMC_OPENFLOW_BASIC:16, ?OFPXMT_OFB_MPLS_TC:7, 1:1, 1:8, 0:5, Value:3>>;
+
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_PPPOE_CODE, 8, integer, pppoe_code);
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_PPPOE_TYPE, 8, integer, pppoe_type);
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_PPPOE_SID, 16, integer, pppoe_sid);
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_PPP_PROT, 16, integer, ppp_prot);
 
 encode_oxm_tlv({{Class, Field}, {Value, Mask}}) ->
     Length = size(Value) + size(Mask),
