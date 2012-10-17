@@ -32,7 +32,7 @@
 
 %% internal API
 -export([start_link/1]).
--export([start_connection/1, accept/2, connect/2, send/3, send/4]).
+-export([start_connection/1, accept/2, connect/2, send/3, send/4, stats_request/4]).
 
 %% gen_fsm callbacks
 -export([init/1, handle_event/3,
@@ -54,7 +54,8 @@
 	  socket,
 	  pending = <<>>,
 	  features,
-	  counters = #flower_datapath_counters{} :: #flower_datapath_counters{}
+	  counters = #flower_datapath_counters{} :: #flower_datapath_counters{},
+	  timeouts
 	 }).
 
 
@@ -107,6 +108,9 @@ send(Sw, Type, Msg) ->
 
 send(Sw, Type, Xid, Msg) ->
     gen_fsm:send_event(Sw, {send, Type, Xid, Msg}).
+
+stats_request(Sw, Type, Msg, Timeout) ->
+    gen_fsm:sync_send_event(Sw, {stats_request, Type, Msg, Timeout}).
 
 counters() ->
     lists:map(fun(Sw) -> counters(Sw) end, flower_datapath_sup:datapaths()).
@@ -221,7 +225,7 @@ portinfo(Sw, Port) ->
 %%--------------------------------------------------------------------
 init(TransportMod) ->
     process_flag(trap_exit, true),
-    {ok, setup, #state{transport = TransportMod}, ?STARTUP_TIMEOUT}.
+    {ok, setup, #state{transport = TransportMod, timeouts = orddict:new()}, ?STARTUP_TIMEOUT}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -279,6 +283,15 @@ connecting({features_reply, _Version, _Xid, Msg}, State) ->
 connecting({echo_request, _Version, Xid, _Msg}, State) ->
     send_pkt(echo_reply, Xid, <<>>, {next_state, connected, State}).
 
+connected({timeout, _Ref, Xid}, State) ->
+    case stop_timeout(Xid, State) of
+	{ok, From, NewState} ->
+	    gen_fsm:reply(From, {error, timeout}),
+	    {next_state, connected, NewState};
+	_ ->
+	    {next_state, connected, State}
+    end;
+
 connected({features_reply, _Version, _Xid, Msg}, State) ->
     ?DEBUG("got features_reply in connected"),
     {next_state, connected, State#state{features = Msg}};
@@ -298,9 +311,15 @@ connected({port_status,_Version,  _Xid, Msg}, State) ->
     flower_dispatcher:dispatch({port, status}, self(), Msg),
     {next_state, connected, State};
 
-connected({stats_reply, _Version, _Xid, Msg}, State) ->
-    flower_dispatcher:dispatch({port, stats}, self(), Msg),
-    {next_state, connected, State};
+connected({stats_reply, _Version, Xid, Msg}, State) ->
+    case stop_timeout(Xid, State) of
+	{ok, From, NewState} ->
+	    gen_fsm:reply(From, {ok, Msg}),
+	    {next_state, connected, NewState};
+	_ ->
+	    flower_dispatcher:dispatch({port, stats}, self(), Msg),
+	    {next_state, connected, State}
+    end;
 
 connected({send, Type, Msg}, State) ->
     send_request(Type, Msg, {next_state, connected, State});
@@ -333,7 +352,12 @@ connected(Msg, State) ->
 
 connected({portinfo, Port}, _From, #state{features = Features} = State) ->
     Reply = lists:keyfind(Port, #ofp_phy_port.port_no, Features#ofp_switch_features.ports),
-    {reply, Reply, connected, State}.
+    {reply, Reply, connected, State};
+
+connected({stats_request, Type, Msg, Timeout}, From, State) ->
+    NewState0 = inc_xid(State),
+    NewState1 = start_timeout(NewState0#state.xid, Timeout, From, NewState0),
+    send_pkt(Type, NewState0#state.xid, Msg, {next_state, connected, NewState1}).
 
 %% state_name(_Event, _From, State) ->
 %% 	Reply = ok,
@@ -392,7 +416,7 @@ handle_sync_event(_Event, _From, StateName, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_info({tcp, Socket, Data}, StateName, #state{socket = Socket} = State) ->
-    io:format(flower_tools:hexdump(Data)),
+    ?DEBUG(flower_tools:hexdump(Data)),
     {Msg, DataRest} = decode_of_pkt(<<(State#state.pending)/binary, Data/binary>>, State),
     State0 = inc_counter(State, recv, raw_packets),
     State1 = State0#state{pending = DataRest},
@@ -426,8 +450,9 @@ handle_info({tcp_closed, Socket}, _StateName, #state{role = client,
 						     socket = Socket} = State) ->
     error_logger:info_msg("Server Disconnected."),
     TransportMod:close(State#state.socket),
-    NewState = State#state{socket = undefined, pending = <<>>, features = undefined},
-    {next_state, setup, NewState, ?RECONNECT_TIMEOUT};
+    NewState0 = State#state{socket = undefined, pending = <<>>, features = undefined},
+    NewState1 = cancel_timeouts(NewState0),
+    {next_state, setup, NewState1, ?RECONNECT_TIMEOUT};
 
 handle_info({tcp_closed, Socket}, _StateName, #state{socket = Socket} = State) ->
     error_logger:info_msg("Client Disconnected."),
@@ -470,6 +495,26 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+start_timeout(Xid, Timeout, From, State = #state{timeouts = TimeOuts}) ->
+    Ref = gen_fsm:start_timer(Timeout, Xid),
+    State#state{timeouts = orddict:store(Xid, {Ref, From}, TimeOuts)}.
+
+stop_timeout(Xid, State = #state{timeouts = TimeOuts}) ->
+    case orddict:find(Xid, TimeOuts) of
+	{ok, {Ref, From}} ->
+	    gen_fsm:cancel_timer(Ref),
+	    NewState = State#state{timeouts = orddict:erase(Xid, TimeOuts)},
+	    {ok, From, NewState};
+	R ->
+	    {not_found, State}
+    end.
+
+cancel_timeouts(State = #state{timeouts = TimeOuts}) ->
+    orddict:fold(fun(_, {Ref, From}, _) ->
+			 gen_fsm:cancel_timer(Ref),
+			 gen_fsm:reply(From, {error, connection})
+		 end, ok, TimeOuts),
+    State = #state{timeouts = orddict:new()}.
 
 exec_sync(#ovs_msg{version = Version, type = Type, xid = Xid, msg = Msg}, StateName, State) ->
     State0 = inc_counter(State, recv, Type),
