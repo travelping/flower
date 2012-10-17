@@ -1808,7 +1808,7 @@ encode_msg(#ofp_group_mod{command = Command, type = Type,
 
 encode_msg(#ofp_port_mod{port_no = PortNo, hw_addr = HwAddr,
 			 config = Config, mask = Mask, advertise = Advertise}) ->
-    <<PortNo:32, 0:32, HwAddr/binary, 0:2,
+    <<PortNo:32, 0:32, HwAddr/binary, 0:16,
       (enc_flags(ofp_port_config(), Config)):32,
       (enc_flags(ofp_port_config(), Mask)):32,
       (enc_flags(ofp_port_features(), Advertise)):32>>;
