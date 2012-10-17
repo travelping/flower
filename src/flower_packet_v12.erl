@@ -608,6 +608,13 @@ ofp_group_type(select)		-> 1;
 ofp_group_type(indirect)	-> 2;
 ofp_group_type(ff)		-> 3.
 
+ofp_group(16#fffffffc)	-> all;
+ofp_group(16#ffffffff)	-> any;
+ofp_group(X) when is_integer(X) -> X;
+
+ofp_group(all)		-> 16#fffffffc;
+ofp_group(any)		-> 16#ffffffff.
+
 -spec ofp_port(non_neg_integer()) -> ofp_port_name() | non_neg_integer();
 	      (ofp_port_name()) -> non_neg_integer().
 %% Port numbering.  Physical ports are numbered starting from 1.
@@ -757,7 +764,7 @@ decode_msg(flow_mod, <<Cookie:64/integer, CookieMask:64/integer, TableId:8/integ
 		      command = ofp_flow_mod_command(Command),
 		      idle_timeout = IdleTimeout, hard_timeout = HardTimeout,
 		      priority = Priority, buffer_id = BufferId,
-		      out_port = ofp_port(OutPort), out_group = OutGroup,
+		      out_port = ofp_port(OutPort), out_group = ofp_group(OutGroup),
 		      flags = dec_flags(ofp_flow_mod_flags(), Flags),
 		      match = decode_ofp_match(Match),
 		      instructions = decode_ofp_instructions(Instructions)};
@@ -1069,13 +1076,13 @@ decode_stats_request(desc, <<>>) ->
 decode_stats_request(flow, <<TableId:8/integer, _Pad0:3/bytes, OutPort:32/integer, OutGroup:32/integer,
 			     _Pad1:4/bytes, Cookie:64/integer, CookieMask:64/integer, Match/binary>>) ->
     #ofp_flow_stats_request_v11{table_id = ofp_table(TableId), out_port = ofp_port(OutPort),
-				out_group = OutGroup, cookie = Cookie, cookie_mask = CookieMask,
+				out_group = ofp_group(OutGroup), cookie = Cookie, cookie_mask = CookieMask,
 				match = decode_ofp_match(Match)};
 
 decode_stats_request(aggregate, <<TableId:8/integer, _Pad0:3/bytes, OutPort:32/integer, OutGroup:32/integer,
 			     _Pad1:4/bytes, Cookie:64/integer, CookieMask:64/integer, Match/binary>>) ->
     #ofp_aggregate_stats_request_v11{table_id = ofp_table(TableId), out_port = ofp_port(OutPort),
-				     out_group = OutGroup, cookie = Cookie, cookie_mask = CookieMask,
+				     out_group = ofp_group(OutGroup), cookie = Cookie, cookie_mask = CookieMask,
 				     match = decode_ofp_match(Match)};
 
 decode_stats_request(table, <<>>) ->
@@ -1769,7 +1776,7 @@ encode_msg(#ofp_flow_mod_v12{cookie = Cookie, cookie_mask = CookieMask, table_id
       IdleTimeout:16, HardTimeout:16,
       Priority:16, BufferId:32,
       (ofp_port(OutPort)):32,
-      OutGroup:32,
+      (ofp_group(OutGroup)):32,
       (enc_flags(ofp_flow_mod_flags(), Flags)):16, 0:16,
       (encode_ofp_match(Match))/binary,
       (encode_instructions(Instructions))/binary>>;
@@ -1813,14 +1820,14 @@ encode_msg(#ofp_flow_stats_request_v11{table_id = TableId, out_port = OutPort, o
 				       cookie = Cookie, cookie_mask = CookieMask, match = Match}) ->
 
     Req = <<(ofp_table(TableId)):8, 0:24, (ofp_port(OutPort)):32,
-	    OutGroup:32, 0:32, Cookie:64, CookieMask:64, 
+	    (ofp_group(OutGroup)):32, 0:32, Cookie:64, CookieMask:64, 
 	    (encode_ofp_match(Match))/binary>>,
     encode_ofp_stats_request(flow, 0, Req);
 
 encode_msg(#ofp_aggregate_stats_request_v11{table_id = TableId, out_port = OutPort, out_group = OutGroup,
 					    cookie = Cookie, cookie_mask = CookieMask, match = Match}) ->
     Req = <<(ofp_table(TableId)):8, 0:24, (ofp_port(OutPort)):32,
-	    OutGroup:32, 0:32, Cookie:64, CookieMask:64,
+	    (ofp_group(OutGroup)):32, 0:32, Cookie:64, CookieMask:64,
 	    (encode_ofp_match(Match))/binary>>,
     encode_ofp_stats_request(aggregate, 0, Req);
 
