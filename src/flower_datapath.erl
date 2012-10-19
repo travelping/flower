@@ -514,7 +514,7 @@ cancel_timeouts(State = #state{timeouts = TimeOuts}) ->
 			 gen_fsm:cancel_timer(Ref),
 			 gen_fsm:reply(From, {error, connection})
 		 end, ok, TimeOuts),
-    State = #state{timeouts = orddict:new()}.
+    State#state{timeouts = orddict:new()}.
 
 exec_sync(#ovs_msg{version = Version, type = Type, xid = Xid, msg = Msg}, StateName, State) ->
     State0 = inc_counter(State, recv, Type),
