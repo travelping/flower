@@ -99,7 +99,7 @@ init({Port, Options}) ->
 handle_accept(Sock, State) ->
     case flower_datapath:start_connection(?MODULE) of
 	{ok, Pid} ->
-	    gen_tcp:controlling_process(Pid, Sock),
+	    gen_tcp:controlling_process(Sock, Pid),
 	    flower_datapath:accept(Pid, Sock);
 	_ ->
 	    error_logger:error_report([{event, accept_failed}]),
