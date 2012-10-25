@@ -39,7 +39,7 @@
 	 handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
 -export([setup/2, setup/3, open/2, open/3, connecting/2, connecting/3, connected/2, connected/3]).
 -export([install_flow/10, send_packet/4, send_buffer/4, send_packet/5, portinfo/2]).
--export([counters/0, counters/1]).
+-export([counters/0, counters/1, features/1]).
 
 -define(SERVER, ?MODULE).
 -define(VERSION, 3).
@@ -117,6 +117,9 @@ counters() ->
 
 counters(Sw) ->
     gen_fsm:sync_send_all_state_event(Sw, counters).
+
+features(Sw) ->
+    gen_fsm:sync_send_event(Sw, features, 2000).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -378,6 +381,10 @@ connected(Msg, State) ->
 %%                   {stop, Reason, Reply, NewState}
 %% @end
 %%--------------------------------------------------------------------
+
+connected(features, _From, #state{features = Features} = State) ->
+    Reply = Features,
+    {reply, Reply, connected, State};
 
 connected({portinfo, Port}, _From, #state{features = Features} = State) ->
     Reply = lists:keyfind(Port, #ofp_phy_port.port_no, Features#ofp_switch_features.ports),
