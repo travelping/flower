@@ -29,6 +29,7 @@
 		  nw_dst,
 		  in_port,
 		  vlan_tci,
+		  tags = [],
 		  dl_type,
 		  tp_src,
 		  tp_dst,
