@@ -822,13 +822,13 @@ decode_oxm_tlvs(Data, TLVs) ->
 
 	<<?OFPXMC_OPENFLOW_BASIC:16/integer,
 	  ?OFPXMT_OFB_VLAN_VID:7/integer, 0:1, 2:8/integer,
-	  16#0000:2/integer, Next/binary>> -> TLV = {vlan_vid, none};
+	  16#0000:16/integer, Next/binary>> -> TLV = {vlan_vid, none};
 	<<?OFPXMC_OPENFLOW_BASIC:16/integer,
 	  ?OFPXMT_OFB_VLAN_VID:7/integer, 0:1, 2:8/integer,
-	  Value:2/integer, Next/binary>> -> TLV = {vlan_vid, Value};
+	  Value:16/integer, Next/binary>> -> TLV = {vlan_vid, Value};
 	<<?OFPXMC_OPENFLOW_BASIC:16/integer,
 	  ?OFPXMT_OFB_VLAN_VID:7/integer, 1:1, 4:8/integer,
-	  16#1000:2/integer, 16#1000:2/integer, Next/binary>> ->TLV =  {vlan_vid, present};
+	  16#1000:16/integer, 16#1000:16/integer, Next/binary>> ->TLV =  {vlan_vid, present};
 	?MATCH_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_VLAN_VID, 2, bits, vlan_vid);
 
 	<<?OFPXMC_OPENFLOW_BASIC:16/integer,
