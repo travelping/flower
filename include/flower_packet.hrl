@@ -107,6 +107,9 @@
 -define(ETH_TYPE_VLAN,  16#8100).
 -define(ETH_TYPE_IPV6,  16#86dd).
 -define(ETH_TYPE_LACP,  16#8809).
+-define(ETH_P_PPP_SES,  16#8864).		%% PPPoE session messages
+-define(ETH_P_PPP_DISC, 16#8863).		%% PPPoE discovery messages
+
 -define(ETH_TYPE_LOOP,  16#9000).
 
 -define(ETH_BROADCAST, <<255,255,255,255,255,255>>).
