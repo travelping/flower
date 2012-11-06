@@ -85,8 +85,22 @@ may_learn(<<_:7, BCast:1, _/binary>> = _MAC) ->
 may_learn(<<_:7, BCast:1, _/binary>> = _MAC, _VLan) ->
     (BCast =/= 1).
 
+
+%%
+%% Some well known Ethernet multicast addresses[11]
+%% Ethernet multicast addressType FieldUsage
+%% 01-00-0C-CC-CC-CC  0x0802      CDP (Cisco Discovery Protocol),
+%%                                VTP (VLAN Trunking Protocol)
+%% 01-00-0C-CC-CC-CD  0x0802      Cisco Shared Spanning Tree Protocol Address
+%% 01-80-C2-00-00-00  0x0802      Spanning Tree Protocol (for bridges) IEEE 802.1D
+%% 01-80-C2-00-00-08  0x0802      Spanning Tree Protocol (for provider bridges) IEEE 802.1AD
+%% 01-80-C2-00-00-02  0x8809      Ethernet OAM Protocol IEEE 802.3ah (A.K.A. "slow protocols")
+%% 01-00-5E-xx-xx-xx  0x0800      IPv4 Multicast (RFC 1112)
+%% 33-33-xx-xx-xx-xx  0x86DD      IPv6 Multicast (RFC 2464)
+%%
 %% Returns true if it is a reserved multicast address, that a bridge must
 %% never forward, false otherwise.
+%%
 eth_addr_is_reserved(<<16#01, 16#80, 16#C2, 16#00, 16#00, 0:4, _:4>>) ->
     true;
 eth_addr_is_reserved(_Addr) ->
