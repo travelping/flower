@@ -23,7 +23,17 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, insert/3, lookup/2, expire/0, may_learn/2, eth_addr_is_reserved/1]).
+-export([start_link/0
+         , insert/2
+         , insert/3
+         , lookup/1
+         , lookup/2
+         , expire/0
+         , may_learn/1
+         , may_learn/2
+         , eth_addr_is_reserved/1
+         , dump/0
+        ]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -51,14 +61,26 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
+insert(MAC, Port) ->
+    insert(MAC, 0, Port).
+
 insert(MAC, VLan, Port) ->
     gen_server:call(?SERVER, {insert, MAC, VLan, Port}).
+
+lookup(MAC) ->
+    lookup(MAC, 0).
 
 lookup(MAC, VLan) ->
     gen_server:call(?SERVER, {lookup, MAC, VLan}).
 
+dump() ->
+    gen_server:call(?SERVER, {dump}).
+
 expire() ->
     gen_server:cast(?SERVER, expire).
+
+may_learn(<<_:7, BCast:1, _/binary>> = _MAC) ->
+    (BCast =/= 1).
 
 may_learn(<<_:7, BCast:1, _/binary>> = _MAC, _VLan) ->
     (BCast =/= 1).
@@ -124,7 +146,11 @@ handle_call({insert, MAC, VLan, Port}, _From, #state{lru = LRU} = State) ->
 
 handle_call({lookup, MAC, VLan}, _From, #state{lru = LRU} = State) ->
     {Result, LRU0} =  lrulist:peek({MAC, VLan}, LRU),
-    {reply, Result, State#state{lru = LRU0}}.
+    {reply, Result, State#state{lru = LRU0}};
+
+handle_call({dump}, _From, #state{lru = LRU} = State) ->
+    Result =  [{Mac,Val} || {{Mac,_VLan},Val} <- lrulist:dump(LRU)],
+    {reply, {ok, Result}, State}.
 
 %%--------------------------------------------------------------------
 %% @private

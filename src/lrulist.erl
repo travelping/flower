@@ -8,7 +8,7 @@
 -module(lrulist).
 -author("Nick Gerakines <nick@gerakines.net>").
 
--export([new/0, get/2, peek/2, insert/3, insert/4, remove/2, purge/1, keys/1]).
+-export([dump/1, new/0, get/2, peek/2, insert/3, insert/4, remove/2, purge/1, keys/1]).
 
 %% --------------------------------------------------------------------
 %% Include files
@@ -42,6 +42,18 @@ get(Key, LRUL = {Tree, LRUTree}) ->
 		    {{ok, Data#data.data}, {UpdatedTree, UpdateLRUTree}}
 	    end
     end.
+
+%% @doc Dump the data as a key-value list
+dump(Tree) ->
+    {Res,_} =
+        lists:foldl(fun(Key,{Vals,Tree0}) ->
+                            case peek(Key, Tree0) of
+                                {none, Tree1}     -> {Vals,Tree1};
+                                {{ok,Val}, Tree1} -> {[{Key,Val}|Vals],Tree1}
+                            end
+                    end, {[],Tree}, keys(Tree)),
+    Res.
+
 
 %% @doc Fetch data from a LRU list based on a key, don't update lastAccess
 peek(Key, LRUL = {Tree, _}) ->
@@ -166,6 +178,18 @@ purge_test_() ->
 	     LRUList1 = purge(LRUList),
 	     [] == lrulist:keys(LRUList1)
      end}.
+
+dump_test_() ->
+    {
+      "Get all values.",
+      fun() ->
+              L1 = lrulist:new(),
+              {ok, L2} = lrulist:insert("s", 4, L1),
+              {ok, L3} = lrulist:insert("p", 2, L2),
+              {ok, L4} = lrulist:insert("d", 4, L3),
+              [{"d",4},{"p",2},{"s",4}] = lists:keysort(1, dump(L4))
+      end
+           }.
 
 -spec gb_trees_update_fun(Key, Fun, Tree1) -> Tree2 when
       Key :: term(),
