@@ -38,7 +38,8 @@
 -export([init/1, handle_event/3,
 	 handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
 -export([setup/2, setup/3, open/2, open/3, connecting/2, connecting/3, connected/2, connected/3]).
--export([install_flow/10, send_packet/4, send_buffer/4, send_packet/5, portinfo/2]).
+-export([install_flow/10, send_packet/4, send_buffer/4, send_packet/5, portinfo/2,
+         remove_flow/10, remove_all_flows/1, modify_flow/11]).
 -export([counters/0, counters/1, features/1]).
 
 -define(SERVER, ?MODULE).
@@ -136,16 +137,34 @@ features(Sw) ->
 %%--------------------------------------------------------------------
 install_flow(Sw, Match, Cookie, IdleTimeout, HardTimeout,
 	     Actions, BufferId, Priority, InPort, Packet) ->
+    modify_flow(Sw, Match, Cookie, add, IdleTimeout, HardTimeout,
+                Actions, BufferId, Priority, InPort, Packet).
+
+remove_all_flows(Sw) ->
+    remove_flow(Sw, flower_match:encode_ofp_match([]),
+                0, 0, 0, [],  ?OFP_NO_BUFFER, 0, 0, <<>>).
+
+remove_flow(Sw, Match, Cookie, IdleTimeout, HardTimeout,
+	     Actions, BufferId, Priority, InPort, Packet) ->
+    modify_flow(Sw, Match, Cookie, delete, IdleTimeout, HardTimeout,
+                Actions, BufferId, Priority, InPort, Packet).
+
+modify_flow(Sw, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
+            Actions, BufferId, Priority, InPort, Packet) ->
     MatchBin = flower_packet:encode_match(Match),
     ActionsBin = flower_packet:encode_actions(Actions),
-    PktOut = flower_packet:encode_ofp_flow_mod(MatchBin, Cookie, add, IdleTimeout, HardTimeout, Priority, BufferId, none, 1, ActionsBin),
+    PktOut = flower_packet:encode_ofp_flow_mod(MatchBin, Cookie, ModCmd,
+                                               IdleTimeout, HardTimeout,
+                                               Priority, BufferId,
+                                               none, 1, ActionsBin),
 
-						% applies Actions automatically for buffered packets (BufferId /= 16#FFFFFFFF)
+    %% apply Actions automatically for buffered packets
+    %% (BufferId /= 16#FFFFFFFF)
     send(Sw, flow_mod, PktOut),
     if
 	BufferId == 16#FFFFFFFF,
 	Packet /= none ->
-						% only explicitly send unbuffered packets
+            %% only explicitly send unbuffered packets
 	    send_packet(Sw, Packet, Actions, InPort);
 	true ->
 	    ok
@@ -543,7 +562,7 @@ stop_timeout(Xid, State = #state{timeouts = TimeOuts}) ->
 	    gen_fsm:cancel_timer(Ref),
 	    NewState = State#state{timeouts = orddict:erase(Xid, TimeOuts)},
 	    {ok, From, NewState};
-	R ->
+	_ ->
 	    {not_found, State}
     end.
 
