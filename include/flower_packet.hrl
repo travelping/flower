@@ -409,6 +409,8 @@
 -type ofp_instruction() :: #ofp_instruction_goto_table{} | #ofp_instruction_write_metadata{} | #ofp_instruction_actions{}.
 -type ofp_instructions() :: [ofp_instruction() | binary()] | ofp_instruction() | binary().
 
+-define(OFP_NO_BUFFER, -1).  % Not refering to any buffered packet
+
 %% Flow setup and teardown (controller -> datapath).
 -record(ofp_flow_mod, {
           match                 :: binary() | #ofp_match{},     %% Fields to match
@@ -417,7 +419,7 @@
           idle_timeout = 0      :: non_neg_integer(),           %% Idle time before discarding (seconds).
           hard_timeout = 0      :: non_neg_integer(),           %% Max time before discarding (seconds).
           priority = 0          :: non_neg_integer(),           %% Priority level of flow entry.
-          buffer_id = -1        :: integer(),                   %% Buffered packet to apply to (or -1).
+          buffer_id = ?OFP_NO_BUFFER :: integer(),              %% Buffered packet to apply to (or -1).
                                                                 %% Not meaningful for OFPFC_DELETE*.
           out_port = none       :: ofp_port(),                  %% For OFPFC_DELETE* commands, require
                                                                 %% matching entries to include this as an
