@@ -124,7 +124,7 @@ purge_next(LRUTree) ->
 %%
 %%@REMARK:
 %% we could use a iterator here, but a iterator is basicly
-%% a linerized form of the full tree, someone needs to 
+%% a linerized form of the full tree, someone needs to
 %% convince me that this is actually faster than doing
 %% a few lookups...
 %% or in other works, for n > 100000 and x < 20 is
@@ -135,7 +135,11 @@ purge_run(Now, {Expire, _}, LRUL)
   when Expire >= Now ->
     LRUL;
 purge_run(Now, {Expire, Keys}, {Tree, LRUTree}) ->
-    NewTree = lists:foldl(fun(Key, ATree) -> gb_trees:delete(Key, ATree) end, Tree, Keys),
+    Empty = gb_trees:empty(),
+    NewTree = lists:foldl(fun(_Key, ATree) when ATree =:= Empty -> ATree;
+                             (Key, ATree) ->
+                                  gb_trees:delete(Key, ATree)
+                          end, Tree, Keys),
     NewLRUTree = gb_trees:delete(Expire, LRUTree),
     purge_run(Now, purge_next(NewLRUTree), {NewTree, NewLRUTree}).
 
