@@ -446,13 +446,12 @@ handle_info({tcp, Socket, Data}, StateName, #state{socket = Socket} = State) ->
     end;
 
 handle_info({tcp_closed, Socket}, _StateName, #state{role = client,
-						     transport = TransportMod,
 						     socket = Socket} = State) ->
     error_logger:info_msg("Server Disconnected."),
-    TransportMod:close(State#state.socket),
-    NewState0 = State#state{socket = undefined, pending = <<>>, features = undefined},
-    NewState1 = cancel_timeouts(NewState0),
-    {next_state, setup, NewState1, ?RECONNECT_TIMEOUT};
+    NewState0 = State#state{pending = <<>>, features = undefined},
+    NewState1 = socket_close(NewState0),
+    NewState2 = cancel_timeouts(NewState1),
+    {next_state, setup, NewState2, ?RECONNECT_TIMEOUT};
 
 handle_info({tcp_closed, Socket}, _StateName, #state{socket = Socket} = State) ->
     error_logger:info_msg("Client Disconnected."),
@@ -469,7 +468,7 @@ handle_info({tcp_closed, Socket}, _StateName, #state{socket = Socket} = State) -
 %% @spec terminate(Reason, StateName, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(_Reason, StateName, State = #state{transport = TransportMod}) ->
+terminate(_Reason, StateName, State) ->
     ?DEBUG("terminate"),
     case StateName of
 	connected ->
@@ -477,7 +476,7 @@ terminate(_Reason, StateName, State = #state{transport = TransportMod}) ->
 	_ ->
 	    ok
     end,
-    TransportMod:close(State#state.socket),
+    socket_close(State),
     ok.
 
 %%--------------------------------------------------------------------
@@ -527,6 +526,12 @@ exec_async(#ovs_msg{version = Version, type = Type, xid = Xid, msg = Msg}, State
 
 inc_xid(State) ->
     State#state{xid = State#state.xid + 1}.
+
+socket_close(State = #state{socket = undefined}) ->
+    State;
+socket_close(State = #state{transport = TransportMod, socket = Socket}) ->
+    TransportMod:close(Socket),
+    State#state{socket = undefined}.
 
 send_request(Type, Msg, NextStateInfo) ->
     State = element(3, NextStateInfo),
