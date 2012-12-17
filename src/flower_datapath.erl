@@ -261,7 +261,12 @@ setup({connect, Arguments}, State = #state{transport = TransportMod}) ->
 	    send_request(hello, <<>>, {next_state, open, NewState1, ?CONNECT_TIMEOUT});
 	_ ->
 	   {next_state, setup, NewState0, ?RECONNECT_TIMEOUT}
-    end.
+    end;
+
+setup(Msg, State)
+  when element(1, Msg) =:= send ->
+    ?DEBUG("ignoring send in state setup, Msg was: ~p~n", [Msg]),
+    {next_state, setup, State}.
 
 open({hello, Version, Xid, _Msg}, State) 
   when Version > ?VERSION ->
@@ -273,7 +278,12 @@ open({hello, Version, _Xid, _Msg}, State) ->
     ?DEBUG("got hello in open"),
     %% Accept their Idea of version if we support it
     NewState = State#state{version = Version},
-    send_request(features_request, <<>>, {next_state, connecting, NewState, ?REQUEST_TIMEOUT}).
+    send_request(features_request, <<>>, {next_state, connecting, NewState, ?REQUEST_TIMEOUT});
+
+open(Msg, State)
+  when element(1, Msg) =:= send ->
+    ?DEBUG("ignoring send in state open, Msg was: ~p~n", [Msg]),
+    {next_state, open, State}.
 
 connecting({features_reply, _Version, _Xid, Msg}, State) ->
     ?DEBUG("got features_reply in connected"),
@@ -281,7 +291,12 @@ connecting({features_reply, _Version, _Xid, Msg}, State) ->
     {next_state, connected, State#state{features = Msg}};
 
 connecting({echo_request, _Version, Xid, _Msg}, State) ->
-    send_pkt(echo_reply, Xid, <<>>, {next_state, connected, State}).
+    send_pkt(echo_reply, Xid, <<>>, {next_state, connected, State});
+
+connecting(Msg, State)
+  when element(1, Msg) =:= send ->
+    ?DEBUG("ignoring send in state connecting, Msg was: ~p~n", [Msg]),
+    {next_state, connecting, State}.
 
 connected({timeout, _Ref, Xid}, State) ->
     case stop_timeout(Xid, State) of
