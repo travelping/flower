@@ -1641,7 +1641,7 @@ encode_stats_reply(Reply, RecType) ->
 
 encode_ofp_match(Match) ->
     Fields = << << (encode_oxm_tlv(TLV))/binary >> || TLV <- Match >>,
-    Length = byte_size(Fields),
+    Length = byte_size(Fields) + 4,
     pad_to(8, <<1:16, Length:16, Fields/binary>>).
 
 -define(ENCODE_OXM_TLV(Class, Field, Length, Type, Atom),
