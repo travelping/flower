@@ -148,7 +148,9 @@ ofp_xmt_type() ->
      icmpv6_type, icmpv6_code, ipv6_nd_target, ipv6_nd_sll, ipv6_nd_tll,
      mpls_label, mpls_tc].
 
-vendor(X) when is_integer(X) -> X.
+-define(EXPERIMENTER_ROFL, 16#55b12399).
+experimenter(?EXPERIMENTER_ROFL) -> rofl;
+experimenter(rofl) -> ?EXPERIMENTER_ROFL;
 experimenter(X) when is_integer(X) -> X.
 
 eth_type(?ETH_TYPE_IP)    -> ip;
@@ -672,7 +674,7 @@ ofp_stats_type(2)		-> aggregate;
 ofp_stats_type(3)		-> table;
 ofp_stats_type(4)		-> port;
 ofp_stats_type(5)		-> queue;
-ofp_stats_type(16#ffff)	-> vendor;
+ofp_stats_type(16#ffff)		-> experimenter;
 ofp_stats_type(X) when is_integer(X) -> X;
 ofp_stats_type(desc)		-> 0;
 ofp_stats_type(flow)		-> 1;
@@ -680,6 +682,7 @@ ofp_stats_type(aggregate)	-> 2;
 ofp_stats_type(table)		-> 3;
 ofp_stats_type(port)		-> 4;
 ofp_stats_type(queue)		-> 5;
+ofp_stats_type(experimenter)	-> 16#ffff;
 ofp_stats_type(vendor)		-> 16#ffff.
 
 ofp_queue_properties(0)        -> none;
@@ -689,11 +692,15 @@ ofp_queue_properties(none)     -> 0;
 ofp_queue_properties(min_rate) -> 1;
 ofp_queue_properties(max_rate) -> 2.
 
-ofp_vendor_stats_type(VendorStatsType)	-> VendorStatsType.
+ofp_experimenter_stats_type(ExperimenterStatsType)	-> ExperimenterStatsType.
 
--spec of_vendor_ext(of_vendor_ext()) -> {atom(), non_neg_integer()};
-		   ({atom(), non_neg_integer()}) -> of_vendor_ext().
-of_vendor_ext(VendorExt) ->	VendorExt.
+-spec of_experimenter_ext(of_experimenter_ext()) -> {atom(), non_neg_integer()};
+			 ({atom(), non_neg_integer()}) -> of_experimenter_ext().
+of_experimenter_ext({rofl, 0}) ->	rofl_none;
+of_experimenter_ext({rofl, 2}) ->	rofl_flowspace;
+of_experimenter_ext(rofl_none) ->	{rofl, 0};
+of_experimenter_ext(rofl_flowspace) ->	{rofl, 2};
+of_experimenter_ext(ExperimenterExt) when is_integer(ExperimenterExt) ->	ExperimenterExt.
 
 %% protocol(NwProto)
 %%   when is_atom(NwProto) ->
@@ -710,8 +717,8 @@ decode_msg(error, << Type:16/integer, Code:16/integer, Data/binary >>) ->
     Error = {Type1, Code1},
     #ofp_error{error = Error, data = Data};
 
-decode_msg(vendor, << Vendor:32/integer, Cmd:32/integer, Data/binary >>) ->
-    decode_msg(of_vendor_ext({vendor(Vendor), Cmd}), Data);
+decode_msg(experimenter, << Experimenter:32/integer, Cmd:32/integer, Data/binary >>) ->
+    decode_msg(of_experimenter_ext({experimenter(Experimenter), Cmd}), Data);
 
 decode_msg(features_reply, <<DataPathId:64/integer, NBuffers:32/integer, NTables:8/integer, Pad:3/bytes,
 			     Capabilities:32/integer, _Reserved:32/integer, Ports/binary>>) ->
@@ -795,8 +802,24 @@ decode_msg(queue_get_config_request, <<Port:32/integer, _Pad:4/bytes>>) ->
 decode_msg(ofp_queue_get_config_reply, <<Port:32/integer, _Pad:4/bytes, Queues/binary>>) ->
     #ofp_queue_get_config_reply{port = ofp_port(Port), queues = decode_queues(Queues)};
 
+%%---------------------------
+%% Experimenter Extensions
+%%---------------------------
+decode_msg(rofl_flowspace, <<1:8, 2:8, Length:16/integer, Data/binary>>) ->
+    MsgSize = Length - 4,
+    <<Msg:MsgSize/bytes, _Pad/binary>> = Data,
+    decode_rofl_flowspace(Msg);
+
 decode_msg(_, Msg) ->
     Msg.
+
+%%---------------------------
+%% Experimenter Extensions
+%%---------------------------
+decode_rofl_flowspace(<<1:8/integer, _Pad:3/bytes, Match/binary>>) ->
+    #rofl_flowspace{action = add, match = decode_ofp_match(Match)};
+decode_rofl_flowspace(<<2:8/integer, _Pad:3/bytes, Match/binary>>) ->
+    #rofl_flowspace{action = del, match = decode_ofp_match(Match)}.
 
 -define(MATCH_OXM_TLV(Class, Field, Length, Type, Atom),
 	<<Class:16/integer, Field:7/integer, 0:1, (Length div 8):8/integer,
@@ -1107,11 +1130,11 @@ decode_stats_request(group_desc, <<>>) ->
 decode_stats_request(group_features, <<>>) ->
     #ofp_group_features_request{};
 
-decode_stats_request(vendor, <<Vendor:32/integer, Msg/binary>>) ->
-    decode_vendor_stats_request(vendor(Vendor), Msg).
+decode_stats_request(experimenter, <<Experimenter:32/integer, Msg/binary>>) ->
+    decode_experimenter_stats_request(experimenter(Experimenter), Msg).
 
-decode_vendor_stats_request(Vendor, <<SubType:32/integer, _Pad:4/bytes, Msg/binary>>) ->
-    decode_stats_request(ofp_vendor_stats_type({Vendor, SubType}), Msg).
+decode_experimenter_stats_request(Experimenter, <<SubType:32/integer, _Pad:4/bytes, Msg/binary>>) ->
+    decode_stats_request(ofp_experimenter_stats_type({Experimenter, SubType}), Msg).
 
 decode_stats_reply(_, Acc, <<>>) ->
     lists:reverse(Acc);
@@ -1224,11 +1247,11 @@ decode_stats_reply(group_features, Acc, <<Types:32/integer, Capabilities:32/inte
       actions = [X || <<X:32/integer>> <= Actions]},
     decode_stats_reply(group_desc, [R|Acc], Rest);
     
-decode_stats_reply(vendor, Acc, <<Vendor:32/integer, Msg/binary>>) ->
-    decode_vendor_stats(vendor(Vendor), Acc, Msg).
+decode_stats_reply(experimenter, Acc, <<Experimenter:32/integer, Msg/binary>>) ->
+    decode_experimenter_stats(experimenter(Experimenter), Acc, Msg).
 
-decode_vendor_stats(Vendor, Acc, <<SubType:32/integer, _Pad:4/bytes, Msg/binary>>) ->
-    decode_stats_reply(ofp_vendor_stats_type({Vendor, SubType}), Acc, Msg).
+decode_experimenter_stats(Experimenter, Acc, <<SubType:32/integer, _Pad:4/bytes, Msg/binary>>) ->
+    decode_stats_reply(ofp_experimenter_stats_type({Experimenter, SubType}), Acc, Msg).
 
 decode_ofp_bucket_stats(BucketStats) ->
     [#ofp_bucket_counter{packet_count = PacketCount, byte_count = ByteCount} || <<PacketCount: 64/integer, ByteCount:64/integer>> <= BucketStats].
@@ -1236,16 +1259,16 @@ decode_ofp_bucket_stats(BucketStats) ->
 %%%===================================================================
 %%% Encode
 %%%===================================================================
-%% -spec encode_ovs_vendor({Vendor :: atom(), Cmd :: non_neg_integer()}, binary()) -> binary();
-%% 		       ({Vendor :: non_neg_integer(), Cmd :: non_neg_integer()}, binary()) -> binary();
-%% 		       (Cmd :: of_vendor_ext(), binary()) -> binary().
-%% encode_ovs_vendor({Vendor, Cmd}, Data)
-%%   when is_atom(Vendor) ->
-%%     encode_ovs_vendor({vendor(Vendor), Cmd}, Data);
-%% encode_ovs_vendor({Vendor, Cmd}, Data) ->
-%%     << Vendor:32, Cmd:32, Data/binary >>;
-%% encode_ovs_vendor(Cmd, Data) ->
-%%     encode_ovs_vendor(of_vendor_ext(Cmd), Data).
+-spec encode_ovs_experimenter({Experimenter :: atom(), Cmd :: non_neg_integer()}, binary()) -> binary();
+		       ({Experimenter :: non_neg_integer(), Cmd :: non_neg_integer()}, binary()) -> binary();
+		       (Cmd :: of_experimenter_ext(), binary()) -> binary().
+encode_ovs_experimenter({Experimenter, Cmd}, Data)
+  when is_atom(Experimenter) ->
+    encode_ovs_experimenter({experimenter(Experimenter), Cmd}, Data);
+encode_ovs_experimenter({Experimenter, Cmd}, Data) ->
+    <<Experimenter:32, Cmd:32, Data/binary>>;
+encode_ovs_experimenter(Cmd, Data) ->
+    encode_ovs_experimenter(of_experimenter_ext(Cmd), Data).
 
 encode_phy_port(#ofp_phy_port{port_no = PortNo, hw_addr = HwAddr, name = Name,
 			      config = Config, state = State, curr = Curr,
@@ -1279,6 +1302,11 @@ encode_ofp_packet_queue(#ofp_packet_queue_v12{queue_id = QueueId, port = Port, p
 -spec encode_ofp_packet_queues([#ofp_packet_queue_v12{}]) -> binary().
 encode_ofp_packet_queues(Queues) ->
     << << (encode_ofp_packet_queue(Q))/binary >> || Q <- Queues >>.
+
+encode_rofl_flowspace(Action, Match) ->
+    Length = byte_size(Match) + 8,
+    Bin = <<1:8, 2:8, Length:16, Action:8, 0:24, Match/binary>>,
+    encode_ovs_experimenter(rofl_flowspace, Bin).
 
 %% -spec bool(boolean()) -> 0 | 1;
 %% 	  (non_neg_integer()) -> boolean().
@@ -1406,15 +1434,15 @@ encode_ofp_stats_request(Type, Flags, Body) when is_integer(Type) ->
     <<Type:16, Flags:16, 0:32, Body/binary>>.
 
 %% TODO: we don't support flags in stats replies...
-encode_ofp_stats({vendor, Type}, Body) ->
-    encode_ofp_vendor_stats(Type, Body);
+encode_ofp_stats({experimenter, Type}, Body) ->
+    encode_ofp_experimenter_stats(Type, Body);
 encode_ofp_stats(Type, Body) when is_atom(Type) ->
     encode_ofp_stats(ofp_stats_type(Type), Body);
 encode_ofp_stats(Type, Body) when is_integer(Type) ->
     <<Type:16, 0:16, 0:32, Body/binary>>.
 
-encode_ofp_vendor_stats(Type, Body) when is_atom(Type) ->
-    encode_ofp_vendor_stats(ofp_vendor_stats_type(Type), Body).
+encode_ofp_experimenter_stats(Type, Body) when is_atom(Type) ->
+    encode_ofp_experimenter_stats(ofp_experimenter_stats_type(Type), Body).
 
 encode_action(#ofp_action_output{port = Port, max_len = MaxLen}) ->
     encode_ofs_action_output(Port, MaxLen);
@@ -1872,6 +1900,14 @@ encode_msg(#ofp_group_desc_stats_request{}) ->
 
 encode_msg(#ofp_group_features_request{}) ->
     encode_ofp_stats_request(group_features, 0, <<>>);
+
+%%---------------------------
+%% Experimenter Extensions
+%%---------------------------
+encode_msg(#rofl_flowspace{action = add, match = Match}) ->
+    encode_rofl_flowspace(1, encode_ofp_match(Match));
+encode_msg(#rofl_flowspace{action = del, match = Match}) ->
+    encode_rofl_flowspace(2, encode_ofp_match(Match));
 
 encode_msg(Msg)
   when is_binary(Msg) ->

@@ -84,6 +84,7 @@
 		      'nxast_autopath'.
 -type nx_match() :: [{nxm_header(), term()}].
 -type of_vendor_ext() :: 'nxt_role_request' | 'nxt_role_reply' | 'nxt_set_flow_format' | 'nxt_flow_mod' | 'nxt_flow_removed' | 'nxt_flow_mod_table_id'.
+-type of_experimenter_ext() :: 'rofl_none' | 'rofl_flowspace' | binary().
 
 -type oxm_tlv_type() :: 'in_port' | 'in_phy_port' | 'metadata' | 'eth_dst' | 'eth_src' |
 			'eth_type' | 'vlan_vid' | 'vlan_vid' | 'vlan_vid' | 'vlan_pcp' |
@@ -1027,4 +1028,9 @@
 	  packet_count	:: non_neg_integer(),			%% Number of packets in flows.
 	  byte_count	:: non_neg_integer(),			%% Number of bytes in flows.
 	  flow_count	:: non_neg_integer()			%% Number of flows.
+}).
+
+-record(rofl_flowspace, {
+	  action	:: 'add' | 'del',			%% Add or Delete FlowSpace registration
+	  match		:: binary() | #ofp_match{}		%% Fields to match.
 }).

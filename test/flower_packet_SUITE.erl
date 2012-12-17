@@ -198,6 +198,9 @@ v12_rofl_broken_table_stats_reply() ->
 	       "3e0000000198ff3f0198ff3f0000000000040000000000000000000000000000"
 	       "0000000000000000").
 
+v12_rofl_flow_space_reg() ->
+    hexstr2bin("03040020a815f28555b123990000000201020010010000000001000400000000").
+
 % hexstr2bin
 hexstr2bin(S) ->
     list_to_binary(hexstr2list(S)).
@@ -445,15 +448,22 @@ test_stats_req(_Config) ->
 	flower_packet:encode_msg(#ofp_queue_stats_request{port_no = none, queue_id = all}).
 
 test_v12(_Config) ->
-    io:format("P0: ~p~n", [flower_packet_v12:decode(v12_ofp_hello())]),
-    io:format("P1: ~p~n", [flower_packet_v12:decode(v12_ofp_features_request())]),
-    io:format("P2: ~p~n", [flower_packet_v12:decode(v12_ofp_features_reply())]),
-    io:format("P3: ~p~n", [flower_packet_v12:decode(v12_ofp_get_config_request())]),
-    io:format("P4: ~p~n", [flower_packet_v12:decode(v12_ofp_get_config_reply())]),
-    io:format("P5: ~p~n", [flower_packet_v12:decode(v12_ofp_table_stats_request())]),
-    io:format("P6: ~p~n", [flower_packet_v12:decode(v12_ofp_table_stats_reply())]),
-    io:format("P7: ~p~n", [flower_packet_v12:decode(v12_rofl_broken_table_stats_request())]),
-    io:format("P8: ~p~n", [flower_packet_v12:decode(v12_rofl_broken_table_stats_reply())]),
+    ct:pal("P0: ~p~n", [flower_packet_v12:decode(v12_ofp_hello())]),
+    ct:pal("P1: ~p~n", [flower_packet_v12:decode(v12_ofp_features_request())]),
+    ct:pal("P2: ~p~n", [flower_packet_v12:decode(v12_ofp_features_reply())]),
+    ct:pal("P3: ~p~n", [flower_packet_v12:decode(v12_ofp_get_config_request())]),
+    ct:pal("P4: ~p~n", [flower_packet_v12:decode(v12_ofp_get_config_reply())]),
+    ct:pal("P5: ~p~n", [flower_packet_v12:decode(v12_ofp_table_stats_request())]),
+    ct:pal("P6: ~p~n", [flower_packet_v12:decode(v12_ofp_table_stats_reply())]),
+    ct:pal("P7: ~p~n", [flower_packet_v12:decode(v12_rofl_broken_table_stats_request())]),
+    ct:pal("P8: ~p~n", [flower_packet_v12:decode(v12_rofl_broken_table_stats_reply())]),
+    ct:pal("P9: ~p~n", [flower_packet_v12:decode(v12_rofl_flow_space_reg())]),
+    ok.
+
+test_v12_rofl_flow_space_reg(_Config) ->
+    Sw = v12_rofl_flow_space_reg(),
+    {[Msg = #ovs_msg{msg = #rofl_flowspace{action = add}}], _} = flower_packet_v12:decode(Sw),
+    Sw = flower_packet_v12:encode(Msg),
     ok.
 
 all() -> 
@@ -465,7 +475,8 @@ all() ->
 	 test_port_status_lnk_up,
 	 test_flow_mod,
 	 test_nx_flow_mod, test_nxst_flow_stats_request, test_nxst_flow_stats,
-	 test_stats_req, test_v12].
+	 test_stats_req, test_v12,
+	 test_v12_rofl_flow_space_reg].
 
 init_per_suite(Config) ->
 	Config.
