@@ -92,6 +92,8 @@ terminate(_Reason, _State) ->
 %%% Internal functions
 %%%===================================================================
 
+do_join(Events, Pid) when is_list(Events) ->
+    [do_join(Event, Pid) || Event <- Events];
 do_join(Event, Pid) ->
     case flower_event:is_registered(Event) of
 	true ->
@@ -101,5 +103,7 @@ do_join(Event, Pid) ->
 	    {error, invalid}
     end.
 
+do_leave(Events, Pid) when is_list(Events) ->
+    [do_leave(Event, Pid) || Event <- Events];
 do_leave(Event, Pid) ->
     ets:match_delete(?SERVER, {Event, Pid}).
