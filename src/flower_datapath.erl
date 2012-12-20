@@ -280,6 +280,13 @@ open({hello, Version, _Xid, _Msg}, State) ->
     NewState = State#state{version = Version},
     send_request(features_request, <<>>, {next_state, connecting, NewState, ?REQUEST_TIMEOUT});
 
+open({echo_request, Version, Xid, _Msg}, State) ->
+    ?DEBUG("got echo_request in open"),
+    %% treat their idea of an hello as acceptable
+    NewState = State#state{version = Version},
+    Reply = send_request(features_request, <<>>, {next_state, connecting, NewState, ?REQUEST_TIMEOUT}),
+    send_pkt(echo_reply, Xid, <<>>, Reply);
+
 open(Msg, State)
   when element(1, Msg) =:= send ->
     ?DEBUG("ignoring send in state open, Msg was: ~p~n", [Msg]),
