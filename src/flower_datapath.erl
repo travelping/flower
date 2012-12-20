@@ -291,7 +291,7 @@ connecting({features_reply, _Version, _Xid, Msg}, State) ->
     {next_state, connected, State#state{features = Msg}};
 
 connecting({echo_request, _Version, Xid, _Msg}, State) ->
-    send_pkt(echo_reply, Xid, <<>>, {next_state, connected, State});
+    send_pkt(echo_reply, Xid, <<>>, {next_state, connecting, State});
 
 connecting(Msg, State)
   when element(1, Msg) =:= send ->
