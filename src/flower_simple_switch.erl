@@ -199,8 +199,8 @@ learn_mac(DlSrc, VLan, Port) ->
 	    ok
     end.
 
-find_out_port(DlDst, _VLan, Port) ->
-    OutPort = case flower_mac_learning:lookup(DlDst, 0) of
+find_out_port(DlDst, VLan, Port) ->
+    OutPort = case flower_mac_learning:lookup(DlDst, VLan) of
 		  none -> flood;
 		  {ok, OutPort1} -> 
 		      if
