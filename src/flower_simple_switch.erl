@@ -178,6 +178,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 choose_destination(#flow{in_port = Port, dl_src = DlSrc, dl_dst = DlDst} = _Flow) ->
     OutPort = case flower_mac_learning:eth_addr_is_reserved(DlSrc) of
+		  % Always use VLan = 0 to implement Shared VLAN Learning
 		  false -> learn_mac(DlSrc, 0, Port),
 			   find_out_port(DlDst, 0, Port);
 		  true -> none
