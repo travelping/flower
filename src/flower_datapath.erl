@@ -475,6 +475,7 @@ handle_info({tcp, Socket, Data}, StateName, #state{socket = Socket} = State) ->
 handle_info({tcp_closed, Socket}, _StateName, #state{role = client,
 						     socket = Socket} = State) ->
     error_logger:info_msg("Server Disconnected."),
+    flower_dispatcher:dispatch({datapath, leave}, self(), undefined),
     NewState0 = State#state{pending = <<>>, features = undefined},
     NewState1 = socket_close(NewState0),
     NewState2 = cancel_timeouts(NewState1),
