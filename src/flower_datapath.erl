@@ -37,7 +37,7 @@
 %% gen_fsm callbacks
 -export([init/1, handle_event/3,
 	 handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
--export([setup/2, open/2, connecting/2, connected/2, connected/3]).
+-export([setup/2, setup/3, open/2, open/3, connecting/2, connecting/3, connected/2, connected/3]).
 -export([install_flow/10, send_packet/4, send_buffer/4, send_packet/5, portinfo/2]).
 -export([counters/0, counters/1]).
 
@@ -268,6 +268,10 @@ setup(Msg, State)
     ?DEBUG("ignoring send in state setup, Msg was: ~p~n", [Msg]),
     {next_state, setup, State}.
 
+setup(_Msg, _From, State) ->
+    Reply = {error, not_connected},
+    {reply, Reply, setup, State, ?RECONNECT_TIMEOUT}.
+
 open({hello, Version, Xid, _Msg}, State) 
   when Version > ?VERSION ->
     ?DEBUG("got hello in open"),
@@ -285,6 +289,10 @@ open(Msg, State)
     ?DEBUG("ignoring send in state open, Msg was: ~p~n", [Msg]),
     {next_state, open, State}.
 
+open(_Msg, _From, State) ->
+    Reply = {error, not_connected},
+    {reply, Reply, open, State, ?CONNECT_TIMEOUT}.
+
 connecting({features_reply, _Version, _Xid, Msg}, State) ->
     ?DEBUG("got features_reply in connected"),
     flower_dispatcher:dispatch({datapath, join}, self(), Msg),
@@ -297,6 +305,10 @@ connecting(Msg, State)
   when element(1, Msg) =:= send ->
     ?DEBUG("ignoring send in state connecting, Msg was: ~p~n", [Msg]),
     {next_state, connecting, State}.
+
+connecting(_Msg, _From, State) ->
+    Reply = {error, not_connected},
+    {reply, Reply, connecting, State, ?REQUEST_TIMEOUT}.
 
 connected({timeout, _Ref, Xid}, State) ->
     case stop_timeout(Xid, State) of
