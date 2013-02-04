@@ -6,7 +6,6 @@
   {applications, [
                   kernel,
                   stdlib,
-                  sasl,
 		  regine,
                   gen_listener_tcp
                  ]},

@@ -20,6 +20,7 @@ installed manually.
 
 #### Support Appplications:
 - gen\_listener\_tcp (<http://github.com/travelping/gen_listener_tcp>)
+- gen\_socket (<http://github.com/travelping/gen_socket>)
 - regine (<http://github.com/travelping/regine>)
 
 Building
@@ -53,8 +54,9 @@ Run tetrapak build:
 Sample Switch
 -------------
 
-flower_simple_switch is a very basic Layer 2 learning switch. It listens
-for connection from OpenFlow datapath elements on localhost:6633.
+flower_simple_switch is a very basic Layer 2 learning switch.
+flower_tcp_transport listens for connection from OpenFlow datapath elements
+on the specified port.  (in the following example, *:6633).
 
 Run it like this:
 
@@ -67,4 +69,4 @@ Run it like this:
     1> application:start(regine),
     1> application:start(flower).          
     2> flower_simple_switch:start_link().
-    
+    3> flower_tcp_transport:listen(6633,[]).

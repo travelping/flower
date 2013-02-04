@@ -246,6 +246,7 @@ setup({accept, Socket}, State) ->
     ?DEBUG("got setup~n"),
     NewState = State#state{role = server, socket = Socket},
     ?DEBUG("NewState: ~p~n", [NewState]),
+    ok = inet:setopts(Socket, [{active, once}]),
     send_request(hello, <<>>, {next_state, open, NewState, ?CONNECT_TIMEOUT});
 
 setup(timeout, State = #state{role = client, arguments = Arguments}) ->
@@ -258,6 +259,7 @@ setup({connect, Arguments}, State = #state{transport = TransportMod}) ->
 	{ok, Socket} ->
 	    NewState1 = NewState0#state{socket = Socket},
 	    ?DEBUG("NewState: ~p~n", [NewState1]),
+            ok = inet:setopts(Socket, [{active, once}]),
 	    send_request(hello, <<>>, {next_state, open, NewState1, ?CONNECT_TIMEOUT});
 	_ ->
 	   {next_state, setup, NewState0, ?RECONNECT_TIMEOUT}
@@ -300,6 +302,10 @@ connecting({features_reply, _Version, _Xid, Msg}, State) ->
 
 connecting({echo_request, _Version, Xid, _Msg}, State) ->
     send_pkt(echo_reply, Xid, <<>>, {next_state, connecting, State});
+
+connecting(send_ack, #state{socket = Socket} = State) ->
+    ok = inet:setopts(Socket, [{active, once}]),
+    {next_state, connecting, State};
 
 connecting(Msg, State)
   when element(1, Msg) =:= send ->
@@ -353,6 +359,10 @@ connected({send, Type, Msg}, State) ->
 
 connected({send, Type, Xid, Msg}, State) ->
     send_pkt(Type, Xid, Msg, {next_state, connected, State});
+
+connected(send_ack, #state{socket = Socket} = State) ->
+    ok = inet:setopts(Socket, [{active, once}]),
+    {next_state, connected, State};
 
 connected(Msg, State) ->
     ?DEBUG("unhandled message: ~w", [Msg]),
@@ -457,18 +467,12 @@ handle_info({tcp, Socket, Data}, StateName, #state{socket = Socket} = State) ->
 	[First|Next] ->
 	    %% exec first Msg directly....
 	    Reply = exec_sync(First, StateName, State1),
-	    case Reply of
-		{next_state, _, _} ->
-		    ok = inet:setopts(Socket, [{active, once}]);
-		{next_state, _, _, _} -> 
-		    ok = inet:setopts(Socket, [{active, once}]);
-		_ ->
-		    ok
-	    end,
 
 	    %% push any other message into our MailBox....
 	    %%  - extract Reply's NextState directly...
 	    NextState = lists:foldl(fun(M, StateX) -> exec_async(M, StateX) end, element(3, Reply), Next),
+
+	    gen_fsm:send_event(self(), send_ack),
 	    setelement(3, Reply, NextState)
     end;
 
