@@ -79,12 +79,7 @@ close(Socket) ->
     gen_tcp:close(Socket).
 
 send(Socket, Packet) ->
-    case gen_tcp:send(Socket, Packet) of
-	ok ->
-	    inet:setopts(Socket, [{active, once}]);
-	Reply ->
-	    Reply
-    end.
+    gen_tcp:send(Socket, Packet).
 
 %%%===================================================================
 %%% Listener Callbacks

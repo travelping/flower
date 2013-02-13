@@ -246,6 +246,7 @@ setup({accept, Socket}, State) ->
     ?DEBUG("got setup~n"),
     NewState = State#state{role = server, socket = Socket},
     ?DEBUG("NewState: ~p~n", [NewState]),
+    ok = inet:setopts(Socket, [{active, once}]),
     send_request(hello, <<>>, {next_state, open, NewState, ?CONNECT_TIMEOUT});
 
 setup(timeout, State = #state{role = client, arguments = Arguments}) ->
@@ -258,6 +259,7 @@ setup({connect, Arguments}, State = #state{transport = TransportMod}) ->
 	{ok, Socket} ->
 	    NewState1 = NewState0#state{socket = Socket},
 	    ?DEBUG("NewState: ~p~n", [NewState1]),
+	    ok = inet:setopts(Socket, [{active, once}]),
 	    send_request(hello, <<>>, {next_state, open, NewState1, ?CONNECT_TIMEOUT});
 	_ ->
 	   {next_state, setup, NewState0, ?RECONNECT_TIMEOUT}
@@ -403,6 +405,10 @@ connected({stats_request, Type, Msg, Timeout}, From, State) ->
 %%                   {stop, Reason, NewState}
 %% @end
 %%--------------------------------------------------------------------
+handle_event(activate_socket, StateName, State = #state{socket = Socket}) ->
+    ok = inet:setopts(Socket, [{active, once}]),
+    {next_state, StateName, State};
+
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
 
@@ -457,19 +463,27 @@ handle_info({tcp, Socket, Data}, StateName, #state{socket = Socket} = State) ->
 	[First|Next] ->
 	    %% exec first Msg directly....
 	    Reply = exec_sync(First, StateName, State1),
-	    case Reply of
-		{next_state, _, _} ->
-		    ok = inet:setopts(Socket, [{active, once}]);
-		{next_state, _, _, _} -> 
-		    ok = inet:setopts(Socket, [{active, once}]);
-		_ ->
-		    ok
-	    end,
 
-	    %% push any other message into our MailBox....
-	    %%  - extract Reply's NextState directly...
-	    NextState = lists:foldl(fun(M, StateX) -> exec_async(M, StateX) end, element(3, Reply), Next),
-	    setelement(3, Reply, NextState)
+	    case element(1, Reply) of
+		%% don't process more message if we got a stop
+		next_state ->
+		    case Next of
+			[] ->
+			    ok = inet:setopts(Socket, [{active, once}]),
+			    Reply;
+
+			_ ->
+			    %% push any other message into our MailBox....
+			    %%  - extract Reply's NextState directly...
+			    NextState = lists:foldl(fun(M, StateX) -> exec_async(M, StateX) end, element(3, Reply), Next),
+			    
+			    %% accept new packets only after we finished processing
+			    gen_fsm:send_all_state_event(self(), activate_socket),
+			    setelement(3, Reply, NextState)
+		    end;
+		_ ->
+		    Reply
+	    end
     end;
 
 handle_info({tcp_closed, Socket}, _StateName, #state{role = client,
