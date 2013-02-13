@@ -1,7 +1,7 @@
 -ifdef(debug).
 
 -define(DEBUG(FORMAT, DATA),
-        sasl_syslog_dm:log(?MODULE, debug, "~w(~B): " ++ (FORMAT), [?MODULE, ?LINE | DATA])).
+        io:format("~w(~B): " ++ (FORMAT), [?MODULE, ?LINE | DATA])).
 -define(DEBUG(FORMAT), ?DEBUG(FORMAT, [])).
 
 -else.
