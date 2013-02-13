@@ -486,18 +486,8 @@ handle_info({tcp, Socket, Data}, StateName, #state{socket = Socket} = State) ->
 	    end
     end;
 
-handle_info({tcp_closed, Socket}, _StateName, #state{role = client,
-						     socket = Socket} = State) ->
-    error_logger:info_msg("Server Disconnected."),
-    flower_dispatcher:dispatch({datapath, leave}, self(), undefined),
-    NewState0 = State#state{pending = <<>>, features = undefined},
-    NewState1 = socket_close(NewState0),
-    NewState2 = cancel_timeouts(NewState1),
-    {next_state, setup, NewState2, ?RECONNECT_TIMEOUT};
-
-handle_info({tcp_closed, Socket}, _StateName, #state{socket = Socket} = State) ->
-    error_logger:info_msg("Client Disconnected."),
-    {stop, normal, State}.
+handle_info({tcp_closed, Socket}, _StateName, State) ->
+    handle_socket_error(Socket, State).
 
 %%--------------------------------------------------------------------
 %% @private
@@ -575,6 +565,23 @@ socket_close(State = #state{transport = TransportMod, socket = Socket}) ->
     TransportMod:close(Socket),
     State#state{socket = undefined}.
 
+handle_socket_error(_Socket,
+		    State = #state{role = client, socket = undefined}) ->
+    {next_state, setup, State, ?RECONNECT_TIMEOUT};
+handle_socket_error(Socket,
+		    State = #state{role = client, socket = Socket}) ->
+    error_logger:info_msg("Server Disconnected."),
+    flower_dispatcher:dispatch({datapath, leave}, self(), undefined),
+    NewState0 = State#state{pending = <<>>, features = undefined},
+    NewState1 = socket_close(NewState0),
+    NewState2 = cancel_timeouts(NewState1),
+    {next_state, setup, NewState2, ?RECONNECT_TIMEOUT};
+
+handle_socket_error(Socket,
+		    State = #state{role = server, socket = Socket}) ->
+    error_logger:info_msg("Client Disconnected."),
+    {stop, normal, State}.
+
 send_request(Type, Msg, NextStateInfo) ->
     State = element(3, NextStateInfo),
     NewState = inc_xid(State),
@@ -595,7 +602,7 @@ send_pkt(Type, Xid, Msg, NextStateInfo) ->
 	    setelement(3, NextStateInfo, NewState);
 	{error, Reason} ->
 	    ?DEBUG("error - Reason: ~p~n", [Reason]),
-	    {stop, Reason, NewState}
+	    handle_socket_error(Socket, NewState)
     end.
 
 %%
