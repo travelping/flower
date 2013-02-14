@@ -122,6 +122,13 @@ counters(Sw) ->
 features(Sw) ->
     gen_fsm:sync_send_event(Sw, features, 2000).
 
+features_all() ->
+    lists:map(
+      fun(Sw) ->
+              flower_datapath:features(Sw)
+      end, flower_datapath_sup:datapaths()).
+
+
 %%--------------------------------------------------------------------
 %% @doc
 %% Send a Port_Stats_Request
