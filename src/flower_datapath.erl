@@ -417,9 +417,9 @@ connected({portinfo, Port}, _From, #state{features = Features} = State) ->
     {reply, Reply, connected, State};
 
 connected({stats_request, Type, Msg, Timeout}, From, State) ->
-    NewState0 = inc_xid(State),
-    NewState1 = start_timeout(NewState0#state.xid, Timeout, From, NewState0),
-    send_pkt(Type, NewState0#state.xid, Msg, {next_state, connected, NewState1}).
+    #state{xid = Xid} = NewState0 = inc_xid(State),
+    NewState1 = start_timeout(Xid, Timeout, From, NewState0),
+    send_pkt(Type, Xid, Msg, {next_state, connected, NewState1}).
 
 %% state_name(_Event, _From, State) ->
 %% 	Reply = ok,
@@ -559,6 +559,8 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+start_timeout(_Xid, 0, _From, State) ->
+    State;
 start_timeout(Xid, Timeout, From, State = #state{timeouts = TimeOuts}) ->
     Ref = gen_fsm:start_timer(Timeout, Xid),
     State#state{timeouts = orddict:store(Xid, {Ref, From}, TimeOuts)}.
