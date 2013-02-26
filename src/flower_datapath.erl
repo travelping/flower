@@ -149,7 +149,7 @@ install_flow(Sw, Match, Cookie, IdleTimeout, HardTimeout,
 
 remove_all_flows(Sw) ->
     remove_flow(Sw, flower_match:encode_ofp_match([]),
-                0, 0, 0, [],  ?OFP_NO_BUFFER, 0, 0, <<>>).
+                0, 0, 0, [], ?OFP_NO_BUFFER, 0, 0, <<>>).
 
 remove_flow(Sw, Match, Cookie, IdleTimeout, HardTimeout,
 	     Actions, BufferId, Priority, InPort, Packet) ->
@@ -166,10 +166,10 @@ modify_flow(Sw, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
                                                none, 1, ActionsBin),
 
     %% apply Actions automatically for buffered packets
-    %% (BufferId /= 16#FFFFFFFF)
+    %% (BufferId /= ?OFP_NO_BUFFER)
     send(Sw, flow_mod, PktOut),
     if
-	BufferId == 16#FFFFFFFF,
+	BufferId == ?OFP_NO_BUFFER,
 	Packet /= none ->
             %% only explicitly send unbuffered packets
 	    send_packet(Sw, Packet, Actions, InPort);
@@ -187,7 +187,7 @@ modify_flow(Sw, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
 send_packet(Sw, Packet, Actions, InPort) when is_list(Actions) ->
     case lists:keymember(ofp_action_output, 1, Actions) of
         true ->
-	    PktOut = #ofp_packet_out{buffer_id = 16#FFFFFFFF,
+	    PktOut = #ofp_packet_out{buffer_id = ?OFP_NO_BUFFER,
 				     in_port = InPort,
 				     actions = Actions,
 				     data = Packet},
@@ -219,13 +219,13 @@ send_buffer(Sw, BufferId, Actions, InPort) ->
 %% This function is a convenient wrapper for send_packet and 
 %% send_buffer for situations where it is unknown in advance
 %% whether the packet to be sent is buffered. If
-%% 'buffer_id' is -1, it sends 'packet'; otherwise, it sends the
+%% 'buffer_id' is 0xffffffff, it sends 'packet'; otherwise, it sends the
 %% buffer represented by 'buffer_id'.
 %% @end
 %%--------------------------------------------------------------------
 send_packet(Sw, BufferId, Packet, Actions, InPort) ->
     if
-	BufferId == 16#FFFFFFFF;
+	BufferId == ?OFP_NO_BUFFER;
 	BufferId == none ->
 	    send_packet(Sw, Packet, Actions, InPort);
 	true ->
