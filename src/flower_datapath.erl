@@ -40,7 +40,7 @@
 -export([setup/2, setup/3, open/2, open/3, connecting/2, connecting/3, connected/2, connected/3]).
 -export([install_flow/10, send_packet/4, send_buffer/4, send_packet/5, portinfo/2,
          remove_flow/10, remove_all_flows/1, modify_flow/11]).
--export([counters/0, counters/1, features/1]).
+-export([counters/0, counters/1, features/1, features_all/0]).
 
 -define(SERVER, ?MODULE).
 -define(VERSION, 3).
