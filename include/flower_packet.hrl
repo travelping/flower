@@ -409,7 +409,7 @@
 -type ofp_instruction() :: #ofp_instruction_goto_table{} | #ofp_instruction_write_metadata{} | #ofp_instruction_actions{}.
 -type ofp_instructions() :: [ofp_instruction() | binary()] | ofp_instruction() | binary().
 
--define(OFP_NO_BUFFER, -1).  % Not refering to any buffered packet
+-define(OFP_NO_BUFFER, 16#FFFFFFFF).  % Not refering to any buffered packet
 
 %% Flow setup and teardown (controller -> datapath).
 -record(ofp_flow_mod, {
@@ -565,7 +565,7 @@
 
 %% Send packet (controller -> datapath).
 -record(ofp_packet_out, {
-	  buffer_id = -1	:: non_neg_integer(),		%% ID assigned by datapath (-1 if none).
+	  buffer_id = ?OFP_NO_BUFFER :: non_neg_integer(),	%% ID assigned by datapath (-1 if none).
 	  in_port = none	:: ofp_port(),			%% Packet's input port
 	  actions = []		:: ofp_actions(),		%% Actions.
 	  data = <<>>		:: binary()			%% Packet data.

@@ -149,7 +149,7 @@ install_flow(Sw, Match, Cookie, IdleTimeout, HardTimeout,
 
 remove_all_flows(Sw) ->
     remove_flow(Sw, flower_match:encode_ofp_match([]),
-                0, 0, 0, [],  ?OFP_NO_BUFFER, 0, 0, <<>>).
+                0, 0, 0, [],  ?OFP_NO_BUFFER, 0, 0, none).
 
 remove_flow(Sw, Match, Cookie, IdleTimeout, HardTimeout,
 	     Actions, BufferId, Priority, InPort, Packet) ->
@@ -187,7 +187,7 @@ modify_flow(Sw, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
 send_packet(Sw, Packet, Actions, InPort) when is_list(Actions) ->
     case lists:keymember(ofp_action_output, 1, Actions) of
         true ->
-	    PktOut = #ofp_packet_out{buffer_id = 16#FFFFFFFF,
+	    PktOut = #ofp_packet_out{buffer_id = ?OFP_NO_BUFFER,
 				     in_port = InPort,
 				     actions = Actions,
 				     data = Packet},
