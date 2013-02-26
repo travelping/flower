@@ -23,17 +23,9 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0
-         , insert/2
-         , insert/3
-         , lookup/1
-         , lookup/2
-         , expire/0
-         , may_learn/1
-         , may_learn/2
-         , eth_addr_is_reserved/1
-         , dump/0
-        ]).
+-export([start_link/0, insert/2, insert/3, lookup/1, lookup/2,
+	 expire/0, may_learn/1, may_learn/2, eth_addr_is_reserved/1,
+	 dump/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
