@@ -24,7 +24,7 @@
 -include("flower_debug.hrl").
 
 %% API
--export([listen/2, connect/3]).
+-export([listen/2, connect/3, shutdown/2]).
 
 %% Transport Modules Callbacks
 -export([listener_spec/1, connect/2, close/1, send/2]).
@@ -58,6 +58,9 @@
 %% start a TCP listener process on the given Port with Options
 listen(Port, Options) ->
     flower_sup:start_listener(?MODULE, {Port, Options}).
+
+shutdown(Port, Options) ->
+    flower_sup:stop_listener(?MODULE, {Port, Options}).
 
 connect(Host, Port, Options) ->
     flower_datapath:connect(?MODULE, {Host, Port, Options}).

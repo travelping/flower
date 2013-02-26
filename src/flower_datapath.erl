@@ -38,8 +38,9 @@
 -export([init/1, handle_event/3,
 	 handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
 -export([setup/2, setup/3, open/2, open/3, connecting/2, connecting/3, connected/2, connected/3]).
--export([install_flow/10, send_packet/4, send_buffer/4, send_packet/5, portinfo/2]).
--export([counters/0, counters/1]).
+-export([install_flow/10, send_packet/4, send_buffer/4, send_packet/5, portinfo/2,
+         remove_flow/10, remove_all_flows/1, modify_flow/11]).
+-export([counters/0, counters/1, features/1]).
 
 -define(SERVER, ?MODULE).
 -define(VERSION, 3).
@@ -118,6 +119,16 @@ counters() ->
 counters(Sw) ->
     gen_fsm:sync_send_all_state_event(Sw, counters).
 
+features(Sw) ->
+    gen_fsm:sync_send_event(Sw, features, 2000).
+
+features_all() ->
+    lists:map(
+      fun(Sw) ->
+              flower_datapath:features(Sw)
+      end, flower_datapath_sup:datapaths()).
+
+
 %%--------------------------------------------------------------------
 %% @doc
 %% Send a Port_Stats_Request
@@ -133,16 +144,34 @@ counters(Sw) ->
 %%--------------------------------------------------------------------
 install_flow(Sw, Match, Cookie, IdleTimeout, HardTimeout,
 	     Actions, BufferId, Priority, InPort, Packet) ->
+    modify_flow(Sw, Match, Cookie, add, IdleTimeout, HardTimeout,
+                Actions, BufferId, Priority, InPort, Packet).
+
+remove_all_flows(Sw) ->
+    remove_flow(Sw, flower_match:encode_ofp_match([]),
+                0, 0, 0, [],  ?OFP_NO_BUFFER, 0, 0, none).
+
+remove_flow(Sw, Match, Cookie, IdleTimeout, HardTimeout,
+	     Actions, BufferId, Priority, InPort, Packet) ->
+    modify_flow(Sw, Match, Cookie, delete, IdleTimeout, HardTimeout,
+                Actions, BufferId, Priority, InPort, Packet).
+
+modify_flow(Sw, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
+            Actions, BufferId, Priority, InPort, Packet) ->
     MatchBin = flower_packet:encode_match(Match),
     ActionsBin = flower_packet:encode_actions(Actions),
-    PktOut = flower_packet:encode_ofp_flow_mod(MatchBin, Cookie, add, IdleTimeout, HardTimeout, Priority, BufferId, none, 1, ActionsBin),
+    PktOut = flower_packet:encode_ofp_flow_mod(MatchBin, Cookie, ModCmd,
+                                               IdleTimeout, HardTimeout,
+                                               Priority, BufferId,
+                                               none, 1, ActionsBin),
 
-						% applies Actions automatically for buffered packets (BufferId /= 16#FFFFFFFF)
+    %% apply Actions automatically for buffered packets
+    %% (BufferId /= 16#FFFFFFFF)
     send(Sw, flow_mod, PktOut),
     if
 	BufferId == 16#FFFFFFFF,
 	Packet /= none ->
-						% only explicitly send unbuffered packets
+            %% only explicitly send unbuffered packets
 	    send_packet(Sw, Packet, Actions, InPort);
 	true ->
 	    ok
@@ -158,7 +187,7 @@ install_flow(Sw, Match, Cookie, IdleTimeout, HardTimeout,
 send_packet(Sw, Packet, Actions, InPort) when is_list(Actions) ->
     case lists:keymember(ofp_action_output, 1, Actions) of
         true ->
-	    PktOut = #ofp_packet_out{buffer_id = 16#FFFFFFFF,
+	    PktOut = #ofp_packet_out{buffer_id = ?OFP_NO_BUFFER,
 				     in_port = InPort,
 				     actions = Actions,
 				     data = Packet},
@@ -379,14 +408,18 @@ connected(Msg, State) ->
 %% @end
 %%--------------------------------------------------------------------
 
+connected(features, _From, #state{features = Features} = State) ->
+    Reply = Features,
+    {reply, Reply, connected, State};
+
 connected({portinfo, Port}, _From, #state{features = Features} = State) ->
     Reply = lists:keyfind(Port, #ofp_phy_port.port_no, Features#ofp_switch_features.ports),
     {reply, Reply, connected, State};
 
 connected({stats_request, Type, Msg, Timeout}, From, State) ->
-    NewState0 = inc_xid(State),
-    NewState1 = start_timeout(NewState0#state.xid, Timeout, From, NewState0),
-    send_pkt(Type, NewState0#state.xid, Msg, {next_state, connected, NewState1}).
+    #state{xid = Xid} = NewState0 = inc_xid(State),
+    NewState1 = start_timeout(Xid, Timeout, From, NewState0),
+    send_pkt(Type, Xid, Msg, {next_state, connected, NewState1}).
 
 %% state_name(_Event, _From, State) ->
 %% 	Reply = ok,
@@ -526,6 +559,8 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+start_timeout(_Xid, 0, _From, State) ->
+    State;
 start_timeout(Xid, Timeout, From, State = #state{timeouts = TimeOuts}) ->
     Ref = gen_fsm:start_timer(Timeout, Xid),
     State#state{timeouts = orddict:store(Xid, {Ref, From}, TimeOuts)}.
@@ -536,7 +571,7 @@ stop_timeout(Xid, State = #state{timeouts = TimeOuts}) ->
 	    gen_fsm:cancel_timer(Ref),
 	    NewState = State#state{timeouts = orddict:erase(Xid, TimeOuts)},
 	    {ok, From, NewState};
-	R ->
+	_ ->
 	    {not_found, State}
     end.
 

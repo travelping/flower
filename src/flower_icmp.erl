@@ -21,7 +21,7 @@
 -module(flower_icmp).
 
 %% API
--export([make_icmp/7, op/1]).
+-export([make_icmp/7, make_icmp/9, op/1]).
 
 %% --------------------------------------------------------------------
 %% Include files
@@ -119,20 +119,29 @@ ether_hdr(DlDst, DlSrc, undefined, EthType) ->
 ether_hdr(DlDst, DlSrc, {PCP, VID}, EthType) ->
     <<DlDst:?ETH_ADDR_LEN/bytes-unit:8, DlSrc:?ETH_ADDR_LEN/bytes-unit:8, 16#8100:16, PCP:3, 0:1, VID:12, EthType:16>>.
 
+
 make_icmp(Op, TCI, DlDst, DlSrc, NwSrc, NwDst, IPHdr) ->
+    make_icmp(Op, TCI, DlDst, DlSrc, NwSrc, NwDst, IPHdr, 0, 0).
+
+%% NB: In an echo-reply, the 'IcmpId' and 'IcmpSeqNo' should be
+%% the same as in the matching icmp-request (actually the rest
+%% of the data should be preserved too 'IPHdr').
+%% In those cases where we want to send an ICMP error message,
+%% the IPHdr should be the original IP packet header.
+make_icmp(Op, TCI, DlDst, DlSrc, NwSrc, NwDst, IPHdr, IcmpId, IcmpSeqNo) ->
     {Type, Code} = op(Op),
     Ether = ether_hdr(DlDst, DlSrc, TCI, flower_packet:eth_type(ip)),
 
-    ICMPCSum = ip_csum(<<Type:8, Code:8, 0:16, 0:32, IPHdr/binary>>),
-    ICMP = <<Type:8, Code:8, ICMPCSum:16, 0:32, IPHdr/binary>>,
+    ICMPCSum = ip_csum(<<Type:8, Code:8, 0:16, IcmpId:16, IcmpSeqNo:16, IPHdr/binary>>),
+    ICMP = <<Type:8, Code:8, ICMPCSum:16, IcmpId:16, IcmpSeqNo:16, IPHdr/binary>>,
 
     TotLen = 20 + size(ICMP),
     Id = 0,
     Proto = gen_socket:protocol(icmp),
     HdrCSum = ip_csum(<<4:4, 5:4, 0:8, TotLen:16,
 			Id:16, 0:16, 64:8, Proto:8,
-			0:16/integer, NwDst:4/bytes-unit:8, NwSrc:4/bytes-unit:8>>),
+			0:16/integer, NwSrc:4/bytes-unit:8, NwDst:4/bytes-unit:8>>),
     IP = <<4:4, 5:4, 0:8, TotLen:16,
 	   Id:16, 0:16, 64:8, Proto:8,
-	   HdrCSum:16/integer, NwDst:4/bytes-unit:8, NwSrc:4/bytes-unit:8>>,
-    list_to_binary([Ether, IP, ICMP]).	
+	   HdrCSum:16/integer, NwSrc:4/bytes-unit:8, NwDst:4/bytes-unit:8>>,
+    list_to_binary([Ether, IP, ICMP]).

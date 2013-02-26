@@ -23,7 +23,17 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, insert/3, lookup/2, expire/0, may_learn/2, eth_addr_is_reserved/1]).
+-export([start_link/0
+         , insert/2
+         , insert/3
+         , lookup/1
+         , lookup/2
+         , expire/0
+         , may_learn/1
+         , may_learn/2
+         , eth_addr_is_reserved/1
+         , dump/0
+        ]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -51,20 +61,46 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
+insert(MAC, Port) ->
+    insert(MAC, 0, Port).
+
 insert(MAC, VLan, Port) ->
     gen_server:call(?SERVER, {insert, MAC, VLan, Port}).
+
+lookup(MAC) ->
+    lookup(MAC, 0).
 
 lookup(MAC, VLan) ->
     gen_server:call(?SERVER, {lookup, MAC, VLan}).
 
+dump() ->
+    gen_server:call(?SERVER, {dump}).
+
 expire() ->
     gen_server:cast(?SERVER, expire).
+
+may_learn(<<_:7, BCast:1, _/binary>> = _MAC) ->
+    (BCast =/= 1).
 
 may_learn(<<_:7, BCast:1, _/binary>> = _MAC, _VLan) ->
     (BCast =/= 1).
 
+
+%%
+%% Some well known Ethernet multicast addresses[11]
+%% Ethernet multicast addressType FieldUsage
+%% 01-00-0C-CC-CC-CC  0x0802      CDP (Cisco Discovery Protocol),
+%%                                VTP (VLAN Trunking Protocol)
+%% 01-00-0C-CC-CC-CD  0x0802      Cisco Shared Spanning Tree Protocol Address
+%% 01-80-C2-00-00-00  0x0802      Spanning Tree Protocol (for bridges) IEEE 802.1D
+%% 01-80-C2-00-00-08  0x0802      Spanning Tree Protocol (for provider bridges) IEEE 802.1AD
+%% 01-80-C2-00-00-02  0x8809      Ethernet OAM Protocol IEEE 802.3ah (A.K.A. "slow protocols")
+%% 01-00-5E-xx-xx-xx  0x0800      IPv4 Multicast (RFC 1112)
+%% 33-33-xx-xx-xx-xx  0x86DD      IPv6 Multicast (RFC 2464)
+%%
 %% Returns true if it is a reserved multicast address, that a bridge must
 %% never forward, false otherwise.
+%%
 eth_addr_is_reserved(<<16#01, 16#80, 16#C2, 16#00, 16#00, 0:4, _:4>>) ->
     true;
 eth_addr_is_reserved(_Addr) ->
@@ -124,7 +160,11 @@ handle_call({insert, MAC, VLan, Port}, _From, #state{lru = LRU} = State) ->
 
 handle_call({lookup, MAC, VLan}, _From, #state{lru = LRU} = State) ->
     {Result, LRU0} =  lrulist:peek({MAC, VLan}, LRU),
-    {reply, Result, State#state{lru = LRU0}}.
+    {reply, Result, State#state{lru = LRU0}};
+
+handle_call({dump}, _From, #state{lru = LRU} = State) ->
+    Result =  [{Mac,Val} || {{Mac,_VLan},Val} <- lrulist:dump(LRU)],
+    {reply, {ok, Result}, State}.
 
 %%--------------------------------------------------------------------
 %% @private

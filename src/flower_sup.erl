@@ -23,7 +23,7 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0, start_listener/2]).
+-export([start_link/0, start_listener/2, stop_listener/2]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -42,6 +42,11 @@ start_link() ->
 start_listener(TransportMod, Arguments) ->
     Spec = TransportMod:listener_spec(Arguments),
     supervisor:start_child(?MODULE, Spec).
+
+stop_listener(TransportMod, Arguments) ->
+    {Id,_,_,_,_,_} = TransportMod:listener_spec(Arguments),
+    ok = supervisor:terminate_child(?MODULE, Id),
+    ok = supervisor:delete_child(?MODULE, Id).
 
 %% ===================================================================
 %% Supervisor callbacks
