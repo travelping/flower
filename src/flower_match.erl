@@ -20,7 +20,8 @@
 
 -module(flower_match).
 
--export([encode_ofp_matchflow/2, encode_ofp_match/1, decode_ofp_match/1]).
+-export([encode_ofp_matchflow/2, encode_ofp_match/1, decode_ofp_match/1,
+         ofp_match/2]).
 
 %% --------------------------------------------------------------------
 %% Include files
