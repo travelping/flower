@@ -39,7 +39,7 @@
 	 handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
 -export([setup/2, setup/3, open/2, open/3, connecting/2, connecting/3, connected/2, connected/3]).
 -export([install_flow/10, send_packet/4, send_buffer/4, send_packet/5, portinfo/2,
-         remove_flow/10, remove_all_flows/1, modify_flow/11]).
+         remove_flow/10, remove_all_flows/1, modify_flow/10, modify_flow/11]).
 -export([counters/0, counters/1, features/1, features_all/0]).
 
 -define(SERVER, ?MODULE).
@@ -154,6 +154,11 @@ remove_all_flows(Sw) ->
 remove_flow(Sw, Match, Cookie, IdleTimeout, HardTimeout,
 	     Actions, BufferId, Priority, InPort, Packet) ->
     modify_flow(Sw, Match, Cookie, delete, IdleTimeout, HardTimeout,
+                Actions, BufferId, Priority, InPort, Packet).
+
+modify_flow(Sw, Match, Cookie, IdleTimeout, HardTimeout,
+	     Actions, BufferId, Priority, InPort, Packet) ->
+    modify_flow(Sw, Match, Cookie, modify, IdleTimeout, HardTimeout,
                 Actions, BufferId, Priority, InPort, Packet).
 
 modify_flow(Sw, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
