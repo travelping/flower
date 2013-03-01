@@ -280,7 +280,7 @@ setup({accept, Socket}, State) ->
     ?DEBUG("got setup~n"),
     NewState = State#state{role = server, socket = Socket},
     ?DEBUG("NewState: ~p~n", [NewState]),
-    ok = inet:setopts(Socket, [{active, once}]),
+    ok = setopts(Socket, [{active, once}]),
     send_request(hello, <<>>, {next_state, open, NewState, ?CONNECT_TIMEOUT});
 
 setup(timeout, State = #state{role = client, arguments = Arguments}) ->
@@ -293,7 +293,7 @@ setup({connect, Arguments}, State = #state{transport = TransportMod}) ->
 	{ok, Socket} ->
 	    NewState1 = NewState0#state{socket = Socket},
 	    ?DEBUG("NewState: ~p~n", [NewState1]),
-	    ok = inet:setopts(Socket, [{active, once}]),
+	    ok = setopts(Socket, [{active, once}]),
 	    send_request(hello, <<>>, {next_state, open, NewState1, ?CONNECT_TIMEOUT});
 	_ ->
 	   {next_state, setup, NewState0, ?RECONNECT_TIMEOUT}
@@ -444,7 +444,7 @@ connected({stats_request, Type, Msg, Timeout}, From, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_event(activate_socket, StateName, State = #state{socket = Socket}) ->
-    ok = inet:setopts(Socket, [{active, once}]),
+    ok = setopts(Socket, [{active, once}]),
     {next_state, StateName, State};
 
 handle_event(_Event, StateName, State) ->
@@ -486,7 +486,8 @@ handle_sync_event(_Event, _From, StateName, State) ->
 %%                   {stop, Reason, NewState}
 %% @end
 %%--------------------------------------------------------------------
-handle_info({tcp, Socket, Data}, StateName, #state{socket = Socket} = State) ->
+handle_info({Proto, Socket, Data}, StateName, #state{socket = Socket} = State)
+  when Proto == tcp orelse Proto == ssl ->
     ?DEBUG(flower_tools:hexdump(Data)),
     {Msg, DataRest} = decode_of_pkt(<<(State#state.pending)/binary, Data/binary>>, State),
     State0 = inc_counter(State, recv, raw_packets),
@@ -494,8 +495,8 @@ handle_info({tcp, Socket, Data}, StateName, #state{socket = Socket} = State) ->
     ?DEBUG("handle_info: decoded: ~p~nrest: ~p~n", [Msg, DataRest]),
 
     case Msg of
-	[] -> 
-	    ok = inet:setopts(Socket, [{active, once}]),
+	[] ->
+	    ok = setopts(Socket, [{active, once}]),
 	    {next_state, StateName, State1};
 
 	[First|Next] ->
@@ -507,7 +508,7 @@ handle_info({tcp, Socket, Data}, StateName, #state{socket = Socket} = State) ->
 		next_state ->
 		    case Next of
 			[] ->
-			    ok = inet:setopts(Socket, [{active, once}]),
+			    ok = setopts(Socket, [{active, once}]),
 			    Reply;
 
 			_ ->
@@ -525,6 +526,9 @@ handle_info({tcp, Socket, Data}, StateName, #state{socket = Socket} = State) ->
     end;
 
 handle_info({tcp_closed, Socket}, _StateName, State) ->
+    handle_socket_error(Socket, State);
+
+handle_info({ssl_closed, Socket}, _StateName, State) ->
     handle_socket_error(Socket, State).
 
 %%--------------------------------------------------------------------
@@ -710,3 +714,12 @@ decode_of_pkt(Data, _State) ->
     %% best effort try even when the version it to high,
     %% really for hello only....
     flower_packet_v12:decode(Data).
+
+setopts(Socket, Opts) ->
+    try
+        {ok,_} = ssl:sockname(Socket), % check if ssl socket
+        ssl:setopts(Socket, Opts)
+    catch
+        _:_ ->
+            inet:setopts(Socket, Opts)
+    end.
