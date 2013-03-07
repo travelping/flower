@@ -112,9 +112,9 @@ ofp_match({tp_dst, TpDst}, #ofp_match{wildcards = Wildcards} = Match) ->
 ofp_match({nw_tos, NwTos}, #ofp_match{wildcards = Wildcards} = Match) ->
     Match#ofp_match{wildcards = Wildcards band (bnot ?OFPFW_NW_TOS), nw_tos = NwTos};
 ofp_match({nw_src_mask, NwSrc, Mask}, #ofp_match{wildcards = Wildcards} = Match) ->
-    Match#ofp_match{wildcards = (Wildcards band bnot ?OFPFW_NW_SRC_MASK) bor (((32 - Mask) band 16#3F) bsl 8), nw_src = NwSrc};
+    Match#ofp_match{wildcards = (Wildcards band bnot ?OFPFW_NW_SRC_MASK) bor ((Mask band 16#3F) bsl 8), nw_src = NwSrc};
 ofp_match({nw_dst_mask, NwDst, Mask}, #ofp_match{wildcards = Wildcards} = Match) ->
-    Match#ofp_match{wildcards = (Wildcards band bnot ?OFPFW_NW_DST_MASK) bor (((32 - Mask) band 16#3F) bsl 14), nw_dst = NwDst}.
+    Match#ofp_match{wildcards = (Wildcards band bnot ?OFPFW_NW_DST_MASK) bor ((Mask band 16#3F) bsl 14), nw_dst = NwDst}.
 
 -spec encode_ofp_match(list(term())) -> ofp_match().
 encode_ofp_match(MatchSpec) ->
