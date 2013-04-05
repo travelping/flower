@@ -40,7 +40,7 @@ flow_extract(TunId, InPort, Packet) ->
 
 decode_packet(<<DlDst:?ETH_ADDR_LEN/bytes, DlSrc:?ETH_ADDR_LEN/bytes, 16#8100:16/integer, PCP:3/integer, _CFI:1/integer, VID:12/integer, EtherType:16/integer, PayLoad/binary>>,
 	      Flow) ->
-    decode_ethertype(EtherType, PayLoad, Flow#flow{vlan_tci = {PCP, VID}, dl_src = DlSrc, dl_dst = DlDst});
+    decode_ethertype(flower_packet:eth_type(EtherType), PayLoad, Flow#flow{vlan_tci = {PCP, VID}, dl_src = DlSrc, dl_dst = DlDst});
 
 decode_packet(<<DlDst:?ETH_ADDR_LEN/bytes, DlSrc:?ETH_ADDR_LEN/bytes, EtherType:16/integer, PayLoad/binary>>,
 	      Flow) ->
