@@ -40,6 +40,8 @@
 -export([setup/2, setup/3, open/2, open/3, connecting/2, connecting/3, connected/2, connected/3]).
 -export([install_flow/10, send_packet/4, send_buffer/4, send_packet/5, portinfo/2,
          remove_flow/10, remove_all_flows/1, modify_flow/10, modify_flow/11]).
+-export([install_flow_v12/10,
+         remove_flow_v12/10, remove_all_flows_v12/1, modify_flow_v12/10, modify_flow_v12/11]).
 -export([counters/0, counters/1, features/1, features_all/0]).
 
 -define(SERVER, ?MODULE).
@@ -147,8 +149,17 @@ install_flow(Sw, Match, Cookie, IdleTimeout, HardTimeout,
     modify_flow(Sw, Match, Cookie, add, IdleTimeout, HardTimeout,
                 Actions, BufferId, Priority, InPort, Packet).
 
+install_flow_v12(Sw, Match, Cookie, IdleTimeout, HardTimeout,
+	     Actions, BufferId, Priority, InPort, Packet) ->
+    modify_flow_v12(Sw, Match, Cookie, add, IdleTimeout, HardTimeout,
+                Actions, BufferId, Priority, InPort, Packet).
+
 remove_all_flows(Sw) ->
     remove_flow(Sw, flower_match:encode_ofp_match([]),
+                0, 0, 0, [], ?OFP_NO_BUFFER, 0, 0, <<>>).
+
+remove_all_flows_v12(Sw) ->
+    remove_flow_v12(Sw, flower_match:encode_ofp_match([]),
                 0, 0, 0, [], ?OFP_NO_BUFFER, 0, 0, <<>>).
 
 remove_flow(Sw, Match, Cookie, IdleTimeout, HardTimeout,
@@ -156,9 +167,19 @@ remove_flow(Sw, Match, Cookie, IdleTimeout, HardTimeout,
     modify_flow(Sw, Match, Cookie, delete, IdleTimeout, HardTimeout,
                 Actions, BufferId, Priority, InPort, Packet).
 
+remove_flow_v12(Sw, Match, Cookie, IdleTimeout, HardTimeout,
+	     Actions, BufferId, Priority, InPort, Packet) ->
+    modify_flow_v12(Sw, Match, Cookie, delete, IdleTimeout, HardTimeout,
+                Actions, BufferId, Priority, InPort, Packet).
+
 modify_flow(Sw, Match, Cookie, IdleTimeout, HardTimeout,
 	     Actions, BufferId, Priority, InPort, Packet) ->
     modify_flow(Sw, Match, Cookie, modify, IdleTimeout, HardTimeout,
+                Actions, BufferId, Priority, InPort, Packet).
+
+modify_flow_v12(Sw, Match, Cookie, IdleTimeout, HardTimeout,
+	     Actions, BufferId, Priority, InPort, Packet) ->
+    modify_flow_v12(Sw, Match, Cookie, modify, IdleTimeout, HardTimeout,
                 Actions, BufferId, Priority, InPort, Packet).
 
 modify_flow(Sw, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
@@ -169,7 +190,36 @@ modify_flow(Sw, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
                                                IdleTimeout, HardTimeout,
                                                Priority, BufferId,
                                                none, 1, ActionsBin),
+    %% apply Actions automatically for buffered packets
+    %% (BufferId /= ?OFP_NO_BUFFER)
+    send(Sw, flow_mod, PktOut),
+    if
+	BufferId == ?OFP_NO_BUFFER,
+	Packet /= none ->
+            %% only explicitly send unbuffered packets
+	    send_packet(Sw, Packet, Actions, InPort);
+	true ->
+	    ok
+    end,
+    flower_dispatcher:dispatch({flow, mod}, Sw, Match),
+    ok.
 
+modify_flow_v12(Sw, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
+            Actions, BufferId, Priority, InPort, Packet) ->
+    FlowMod = #ofp_flow_mod_v12{
+        match=Match,
+        cookie=Cookie,
+        command=ModCmd,
+        out_port=any,
+        out_group=any,
+        idle_timeout=IdleTimeout,
+        hard_timeout=HardTimeout,
+        buffer_id=BufferId,
+        priority=Priority,
+        table_id=0,
+        instructions=#ofp_instruction_actions{type=apply_actions,
+                actions=Actions}},
+    PktOut = flower_packet_v12:encode_msg(FlowMod),
     %% apply Actions automatically for buffered packets
     %% (BufferId /= ?OFP_NO_BUFFER)
     send(Sw, flow_mod, PktOut),
@@ -221,7 +271,7 @@ send_buffer(Sw, BufferId, Actions, InPort) ->
 %% @doc
 %% Sends an openflow packet to a datapath.
 %%
-%% This function is a convenient wrapper for send_packet and 
+%% This function is a convenient wrapper for send_packet and
 %% send_buffer for situations where it is unknown in advance
 %% whether the packet to be sent is buffered. If
 %% 'buffer_id' is 0xffffffff, it sends 'packet'; otherwise, it sends the
@@ -308,7 +358,7 @@ setup(_Msg, _From, State) ->
     Reply = {error, not_connected},
     {reply, Reply, setup, State, ?RECONNECT_TIMEOUT}.
 
-open({hello, Version, Xid, _Msg}, State) 
+open({hello, Version, Xid, _Msg}, State)
   when Version > ?VERSION ->
     ?DEBUG("got hello in open"),
     Reply = #ofp_error{error = hello_failed, data = incompatible},
@@ -494,7 +544,7 @@ handle_info({tcp, Socket, Data}, StateName, #state{socket = Socket} = State) ->
     ?DEBUG("handle_info: decoded: ~p~nrest: ~p~n", [Msg, DataRest]),
 
     case Msg of
-	[] -> 
+	[] ->
 	    ok = inet:setopts(Socket, [{active, once}]),
 	    {next_state, StateName, State1};
 
@@ -514,7 +564,7 @@ handle_info({tcp, Socket, Data}, StateName, #state{socket = Socket} = State) ->
 			    %% push any other message into our MailBox....
 			    %%  - extract Reply's NextState directly...
 			    NextState = lists:foldl(fun(M, StateX) -> exec_async(M, StateX) end, element(3, Reply), Next),
-			    
+
 			    %% accept new packets only after we finished processing
 			    gen_fsm:send_all_state_event(self(), activate_socket),
 			    setelement(3, Reply, NextState)

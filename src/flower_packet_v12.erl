@@ -569,8 +569,9 @@ ofp_instruction_type(5)              -> clear_actions;
 ofp_instruction_type(16#ffff)        -> experimenter;
 ofp_instruction_type(goto_table)     -> 1;
 ofp_instruction_type(write_metadata) -> 2;
-ofp_instruction_type(apply_actions)  -> 3;
-ofp_instruction_type(clear_actions)  -> 4;
+ofp_instruction_type(write_actions) -> 3;
+ofp_instruction_type(apply_actions)  -> 4;
+ofp_instruction_type(clear_actions)  -> 5;
 ofp_instruction_type(experimenter)   -> 16#ffff.
 
 ofp_flow_mod_command(0)	-> add;
@@ -639,7 +640,7 @@ ofp_port(controller) -> 16#fffffffd;
 ofp_port(local)      -> 16#fffffffe;
 ofp_port(any)        -> 16#ffffffff.
 
-ofp_table(16#fe) -> emergency; 
+ofp_table(16#fe) -> emergency;
 ofp_table(16#ff) -> all;
 ofp_table(X) when is_integer(X) -> X;
 ofp_table(emergency) -> 16#fe;
@@ -1176,7 +1177,7 @@ decode_stats_reply(table, Acc, <<TableId:8/integer, _Pad:7/bytes, Name:32/bytes,
   when Rest == <<>> ->
     R = #ofp_rofl_broken_table_stats_v12{
       table_id = ofp_table(TableId), name = decode_binstring(Name),
-      wildcards = Wildcards, match = Match, 
+      wildcards = Wildcards, match = Match,
       instructions = dec_flags(ofp_instruction_types(), Instructions),
       write_actions = dec_flags(ofp_action_type(), WriteActions),
       apply_actions = dec_flags(ofp_action_type(), ApplyActions),
@@ -1246,7 +1247,7 @@ decode_stats_reply(group_features, Acc, <<Types:32/integer, Capabilities:32/inte
       max_groups = [X || <<X:32/integer>> <= MaxGroups],
       actions = [X || <<X:32/integer>> <= Actions]},
     decode_stats_reply(group_desc, [R|Acc], Rest);
-    
+
 decode_stats_reply(experimenter, Acc, <<Experimenter:32/integer, Msg/binary>>) ->
     decode_experimenter_stats(experimenter(Experimenter), Acc, Msg).
 
@@ -1531,7 +1532,7 @@ encode_instruction_write_metadata(MetaData, MetaDataMask) ->
     encode_instruction(write_metadata, <<0:32, MetaData:64, MetaDataMask:64>>).
 encode_instruction_actions(Type, Actions) ->
     encode_instruction(Type, <<0:32, (encode_actions(Actions))/binary>>).
-    
+
 
 encode_instruction(#ofp_instruction_goto_table{table_id = TableId}) ->
     encode_instruction_goto_table(TableId);
@@ -1582,7 +1583,7 @@ encode_stats_reply_entry(#ofp_flow_stats_v11{table_id = TableId, duration = {Sec
 encode_stats_reply_entry(#ofp_aggregate_stats{packet_count = PacketCount, byte_count = ByteCount, flow_count = FlowCount}) ->
     <<PacketCount:64, ByteCount:64, FlowCount:32, 0:32>>;
 
-encode_stats_reply_entry(#ofp_table_stats_v12{table_id = TableId, name = Name, 
+encode_stats_reply_entry(#ofp_table_stats_v12{table_id = TableId, name = Name,
 					      match = Match, wildcards = Wildcards,
 					      write_actions = WriteActions, apply_actions = ApplyActions,
 					      write_setfields = WriteSetFields, apply_setfields = ApplySetFields,
@@ -1866,7 +1867,7 @@ encode_msg(#ofp_flow_stats_request_v11{table_id = TableId, out_port = OutPort, o
 				       cookie = Cookie, cookie_mask = CookieMask, match = Match}) ->
 
     Req = <<(ofp_table(TableId)):8, 0:24, (ofp_port(OutPort)):32,
-	    (ofp_group(OutGroup)):32, 0:32, Cookie:64, CookieMask:64, 
+	    (ofp_group(OutGroup)):32, 0:32, Cookie:64, CookieMask:64,
 	    (encode_ofp_match(Match))/binary>>,
     encode_ofp_stats_request(flow, 0, Req);
 
