@@ -204,6 +204,8 @@ modify_flow(Sw, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
     flower_dispatcher:dispatch({flow, mod}, Sw, Match),
     ok.
 
+-include_lib("eunit/include/eunit.hrl").
+
 modify_flow_v12(Sw, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
             Actions, BufferId, Priority, InPort, Packet) ->
     FlowMod = #ofp_flow_mod_v12{

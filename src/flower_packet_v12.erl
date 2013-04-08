@@ -20,6 +20,7 @@
 
 -module(flower_packet_v12).
 
+-include_lib("eunit/include/eunit.hrl").
 %% API
 -export([encode/1, encode_msg/1, decode/1]).
 %% constant mappers
@@ -1399,7 +1400,7 @@ encode_ofs_action_push_vlan(EtherType) ->
 
 -spec encode_ofs_action_pop_vlan() -> binary().
 encode_ofs_action_pop_vlan() ->
-    encode_ofs_action(18, <<>>).
+    encode_ofs_action(18, <<0:32>>).
 
 -spec encode_ofs_action_push_mpls(int16()) -> binary().
 encode_ofs_action_push_mpls(EtherType) ->
@@ -1424,6 +1425,13 @@ encode_ofs_action_set_nw_ttl(NwTTL) ->
 -spec encode_ofs_action_dec_nw_ttl() -> binary().
 encode_ofs_action_dec_nw_ttl() ->
     encode_ofs_action(24, <<>>).
+
+encode_ofs_action_set_field({vlan_vid, Number}) ->
+    TLV = encode_oxm_tlv({vlan_vid, Number}),
+    encode_ofs_action(25, <<TLV/bitstring, 0:48>>);
+encode_ofs_action_set_field({mpls_flabel, Number}) ->
+    TLV = encode_oxm_tlv({mpls_flabel, Number}),
+    encode_ofs_action(25, <<TLV/binary, 0:32>>).
 
 -spec encode_ofs_action_experimenter(int32(), binary()) -> binary().
 encode_ofs_action_experimenter(Experimenter, Msg) ->
@@ -1510,6 +1518,9 @@ encode_action(#ofp_action_set_nw_ttl{ttl = TTL}) ->
 
 encode_action(#ofp_action_dec_nw_ttl{}) ->
     encode_ofs_action_dec_nw_ttl();
+
+encode_action(#ofp_action_set_field{tlv=TLV}) ->
+    encode_ofs_action_set_field(TLV);
 
 encode_action(#ofp_action_experimenter{experimenter = Experimenter, msg = Msg}) ->
     encode_ofs_action_experimenter(Experimenter, Msg);
@@ -1690,7 +1701,7 @@ encode_ofp_match(Match) ->
 ?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ETH_DST, 48, bits, eth_dst);
 ?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ETH_SRC, 48, bits, eth_src);
 ?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ETH_SRC, 48, bits, eth_src);
-?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ETH_TYPE, 16, bits, eth_type);
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ETH_TYPE, 16, integer, eth_type);
 
 encode_oxm_tlv({vlan_vid, none}) ->
     <<?OFPXMC_OPENFLOW_BASIC:16, ?OFPXMT_OFB_VLAN_VID:7, 0:1, 2:8, 16#0000:2>>;
@@ -1698,8 +1709,10 @@ encode_oxm_tlv({vlan_vid, none}) ->
 encode_oxm_tlv({vlan_vid, present}) ->
     <<?OFPXMC_OPENFLOW_BASIC:16, ?OFPXMT_OFB_VLAN_VID:7, 1:1, 4:8, 16#1000:2, 16#1000:2>>;
 
-encode_oxm_tlv({vlan_vid, Value}) ->
-    <<?OFPXMC_OPENFLOW_BASIC:16, ?OFPXMT_OFB_VLAN_VID:7, 0:1, 2:8, Value:2>>;
+%encode_oxm_tlv({vlan_vid, Value}) ->
+%    <<?OFPXMC_OPENFLOW_BASIC:16, ?OFPXMT_OFB_VLAN_VID:7, 0:1, 2:8, Value:2>>;
+
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_VLAN_VID, 16, integer, vlan_vid);
 
 ?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_VLAN_VID, 2, bits, vlan_vid);
 
@@ -1748,8 +1761,9 @@ encode_oxm_tlv({ipv6_flabel, Value, Mask}) ->
 ?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IPV6_ND_SLL, 48, bits, ipv6_nd_sll);
 ?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IPV6_ND_TLL, 48, bits, ipv6_nd_tll);
 
-encode_oxm_tlv({mpls_flabel, Value}) ->
-    <<?OFPXMC_OPENFLOW_BASIC:16, ?OFPXMT_OFB_MPLS_LABEL:7, 1:1, 4:8, 0:4, Value:20>>;
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_MPLS_LABEL, 32, integer, mpls_flabel);
+%encode_oxm_tlv({mpls_flabel, Value}) ->
+%    <<?OFPXMC_OPENFLOW_BASIC:16, ?OFPXMT_OFB_MPLS_LABEL:7, 1:1, 4:8, 0:4, Value:20>>;
 
 encode_oxm_tlv({mpls_tc, Value}) ->
     <<?OFPXMC_OPENFLOW_BASIC:16, ?OFPXMT_OFB_MPLS_TC:7, 1:1, 1:8, 0:5, Value:3>>;
