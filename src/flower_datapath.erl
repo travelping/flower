@@ -305,6 +305,10 @@ connecting({echo_request, _Version, Xid, _Msg}, State) ->
 connecting(Msg, State)
   when element(1, Msg) =:= send ->
     ?DEBUG("ignoring send in state connecting, Msg was: ~p~n", [Msg]),
+    {next_state, connecting, State};
+
+connecting(Msg, State) ->
+    ?DEBUG("ignoring Message in state connecting, Msg was: ~p~n", [Msg]),
     {next_state, connecting, State}.
 
 connecting(_Msg, _From, State) ->
