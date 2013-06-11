@@ -482,16 +482,6 @@ ofp_capabilities() ->
 
 ofp_action_type() ->
     [output,		%% Output to switch port.
-     set_vlan_vid,	%% Set the 802.1q VLAN id.
-     set_vlan_pcp,	%% Set the 802.1q priority.
-     set_dl_src,	%% Ethernet source address.
-     set_dl_dst,	%% Ethernet destination address.
-     set_nw_src,	%% IP source address.
-     set_nw_dst,	%% IP destination address.
-     set_nw_tos,	%% IP ToS (DSCP field, 6 bits).
-     set_nw_ecn,	%% IP ECN (2 bits).
-     set_tp_src,	%% TCP/UDP/SCTP source port.
-     set_tp_dst,	%% TCP/UDP/SCTP destination port.
      copy_ttl_out,	%% Copy TTL "outwards" -- from next-to-outermost to outermost
      copy_ttl_in,	%% Copy TTL "inwards" -- from outermost to next-to-outermost
      set_mpls_label,	%% MPLS label
@@ -549,8 +539,9 @@ ofp_instruction_type(5)              -> clear_actions;
 ofp_instruction_type(16#ffff)        -> experimenter;
 ofp_instruction_type(goto_table)     -> 1;
 ofp_instruction_type(write_metadata) -> 2;
-ofp_instruction_type(apply_actions)  -> 3;
-ofp_instruction_type(clear_actions)  -> 4;
+ofp_instruction_type(write_actions)  -> 3;
+ofp_instruction_type(apply_actions)  -> 4;
+ofp_instruction_type(clear_actions)  -> 5;
 ofp_instruction_type(experimenter)   -> 16#ffff.
 
 ofp_flow_mod_command(0)	-> add;
@@ -925,7 +916,7 @@ decode_ofp_instructions(<<>>, Acc) ->
     lists:reverse(Acc);
 decode_ofp_instructions(<<Type:16/integer, Len:16/integer, Rest/binary>>, Acc) ->
     PayLoadLen = Len - 4,
-    <<PayLoad:PayLoadLen/bytes, Next>> = Rest,
+    <<PayLoad:PayLoadLen/bytes, Next/binary>> = Rest,
     decode_ofp_instructions(Next, [decode_ofp_instruction(ofp_instruction_type(Type), PayLoad)|Acc]).
 decode_ofp_instruction(goto_table, <<TableId:8/integer, _Pad:3/bytes>>) ->
     #ofp_instruction_goto_table{table_id = TableId};
@@ -951,31 +942,13 @@ decode_experimenter_action(Experimenter, Msg) ->
     #ofp_action_experimenter{experimenter = Experimenter, msg = Msg}.
 
 -spec decode_action(Type :: non_neg_integer(), Length :: non_neg_integer(), binary()) -> ofp_action().
-decode_action(0, 4, <<Port:32/integer, MaxLen:16/integer, _:48>>) ->
+decode_action(0, 8, <<Port:32/integer, MaxLen:16/integer, _:48>>) ->
     #ofp_action_output{port = ofp_port(Port), max_len = MaxLen};
 decode_action(1, 4, <<VlanVid:16/integer, _:16>>) ->
     #ofp_action_vlan_vid{vlan_vid = VlanVid};
-decode_action(2, 4, <<VlanPcp:8/integer, _:24>>) ->
-    #ofp_action_vlan_pcp{vlan_pcp = VlanPcp};
-decode_action(3, 12, <<Addr:6/binary, _:48>>) ->
-    #ofp_action_dl_addr{type = src, dl_addr = Addr};
-decode_action(4, 12, <<Addr:6/binary, _:48>>) ->
-    #ofp_action_dl_addr{type = dst, dl_addr = Addr};
-decode_action(5, 4, <<Addr:4/binary>>) ->
-    #ofp_action_nw_addr{type = src, nw_addr = Addr};
-decode_action(6, 4, <<Addr:4/binary>>) ->
-    #ofp_action_nw_addr{type = dst, nw_addr = Addr};
-decode_action(7, 4, <<NwTos:8/integer, _:24>>) ->
-    #ofp_action_nw_tos{nw_tos = NwTos};
-decode_action(8, 4, <<ECN:8/integer, _:24>>) ->
-    #ofp_action_set_nw_ecn{ecn = ECN};
-decode_action(9, 4, <<TpPort:16/integer, _:16>>) ->
-    #ofp_action_tp_port{type = src, tp_port = TpPort};
-decode_action(10, 4, <<TpPort:16/integer, _:16>>) ->
-    #ofp_action_tp_port{type = dst, tp_port = TpPort};
 decode_action(11, 0, <<>>) ->
     #ofp_action_copy_ttl_out{};
-decode_action(12, 0, <<>>) ->
+decode_action(12, 0, <<_:32>>) ->
     #ofp_action_copy_ttl_in{};
 decode_action(13, 4, <<MplsLabel:32/integer>>) ->
     #ofp_action_set_mpls_label{label = MplsLabel};
@@ -987,7 +960,7 @@ decode_action(16, 0, <<>>) ->
     #ofp_action_dec_mpls_ttl{};
 decode_action(17, 4, <<EtherType:16/integer, _:16>>) ->
     #ofp_action_push_vlan{ethertype = EtherType};
-decode_action(18, 0, <<>>) ->
+decode_action(18, 0, <<_:32>>) ->
     #ofp_action_pop_vlan{};
 decode_action(19, 4, <<EtherType:16/integer, _:16>>) ->
     #ofp_action_push_mpls{ethertype = EtherType};
@@ -999,7 +972,7 @@ decode_action(22, 4, <<GroupId:32/integer>>) ->
     #ofp_action_group{group_id = GroupId};
 decode_action(23, 4, <<NwTtl:8/integer, _:24>>) ->
     #ofp_action_set_nw_ttl{ttl = NwTtl};
-decode_action(24, 0, <<>>) ->
+decode_action(24, 0, <<_:32>>) ->
     #ofp_action_dec_nw_ttl{};
 decode_action(25, 0, <<Data>>) ->
     [TLV] = decode_oxm_tlvs(Data, []),
@@ -1306,55 +1279,22 @@ bin_fixed_length(X, Len) -> bin_maybe_undefined(X, Len).
 
 -spec encode_ofs_action(int16(), binary()) -> binary().
 encode_ofs_action(Type, Data) ->
-    Len = 4 + size(Data),
-    <<Type:16, Len:16, Data/binary>>.
+    PadLen = pad_length(8, size(Data) + 4),
+    Len = 4 + size(Data) + PadLen,
+    <<Type:16, Len:16, Data/binary, 0:(PadLen*8)>>.
 
 -spec encode_ofs_action_output(ofp_port(), int16()) -> binary().
 encode_ofs_action_output(Port, MaxLen) ->
     Port0 = ofp_port(Port),
     encode_ofs_action(0, <<Port0:32, MaxLen:16, 0:48>>).
 
--spec encode_ofs_action_vlan_vid(int16()) -> binary().
-encode_ofs_action_vlan_vid(VlanVid) ->
-    encode_ofs_action(1, <<VlanVid:16, 0:16>>).
-
--spec encode_ofs_action_vlan_pcp(int8()) -> binary().
-encode_ofs_action_vlan_pcp(VlanPcp) ->
-    encode_ofs_action(2, <<VlanPcp:8, 0:24>>).
-
--spec encode_ofs_action_dl_addr(ofp_addr_type(), binary()) -> binary().
-encode_ofs_action_dl_addr(src, Addr) ->
-    encode_ofs_action(3, <<Addr:6/bytes, 0:48>>);
-encode_ofs_action_dl_addr(dst, Addr) ->
-    encode_ofs_action(4, <<Addr:6/bytes, 0:48>>).
-
--spec encode_ofs_action_nw_addr(ofp_addr_type(), binary()) -> binary().
-encode_ofs_action_nw_addr(src, Addr) ->
-    encode_ofs_action(5, <<Addr:4/bytes>>);
-encode_ofs_action_nw_addr(dst, Addr) ->
-    encode_ofs_action(6, <<Addr:4/bytes>>).
-
--spec encode_ofs_action_nw_tos(int8()) -> binary().
-encode_ofs_action_nw_tos(NwTos) ->
-    encode_ofs_action(7, <<NwTos:8, 0:24>>).
-
--spec encode_ofs_action_set_nw_ecn(int8()) -> binary().
-encode_ofs_action_set_nw_ecn(NwECN) ->
-    encode_ofs_action(8, <<NwECN:8, 0:24>>).
-
--spec encode_ofs_action_tp_addr(ofp_addr_type(), int16()) -> binary().
-encode_ofs_action_tp_addr(src, TpPort) ->
-    encode_ofs_action(9, <<TpPort:16, 0:16>>);
-encode_ofs_action_tp_addr(dst, TpPort) ->
-    encode_ofs_action(10, <<TpPort:16, 0:16>>).
-
 -spec encode_ofs_action_copy_ttl_out() -> binary().
 encode_ofs_action_copy_ttl_out() ->
-    encode_ofs_action(11, <<>>).
+    encode_ofs_action(11, <<0:32>>).
 
 -spec encode_ofs_action_copy_ttl_in() -> binary().
 encode_ofs_action_copy_ttl_in() ->
-    encode_ofs_action(12, <<>>).
+    encode_ofs_action(12, <<0:32>>).
 
 -spec encode_ofs_action_set_mpls_label(int32()) -> binary().
 encode_ofs_action_set_mpls_label(MplsLabel) ->
@@ -1370,7 +1310,7 @@ encode_ofs_action_set_mpls_ttl(MplsTTL) ->
 
 -spec encode_ofs_action_dec_mpls_ttl() -> binary().
 encode_ofs_action_dec_mpls_ttl() ->
-    encode_ofs_action(16, <<>>).
+    encode_ofs_action(16, <<0:32>>).
 
 -spec encode_ofs_action_push_vlan(int16()) -> binary().
 encode_ofs_action_push_vlan(EtherType) ->
@@ -1378,7 +1318,7 @@ encode_ofs_action_push_vlan(EtherType) ->
 
 -spec encode_ofs_action_pop_vlan() -> binary().
 encode_ofs_action_pop_vlan() ->
-    encode_ofs_action(18, <<>>).
+    encode_ofs_action(18, <<0:32>>).
 
 -spec encode_ofs_action_push_mpls(int16()) -> binary().
 encode_ofs_action_push_mpls(EtherType) ->
@@ -1402,7 +1342,11 @@ encode_ofs_action_set_nw_ttl(NwTTL) ->
 
 -spec encode_ofs_action_dec_nw_ttl() -> binary().
 encode_ofs_action_dec_nw_ttl() ->
-    encode_ofs_action(24, <<>>).
+    encode_ofs_action(24, <<0:32>>).
+
+-spec encode_ofs_action_set_field(term()) -> binary().
+encode_ofs_action_set_field(TLV) ->
+    encode_ofs_action(25, encode_oxm_tlv(TLV)).
 
 -spec encode_ofs_action_experimenter(int32(), binary()) -> binary().
 encode_ofs_action_experimenter(Experimenter, Msg) ->
@@ -1426,27 +1370,6 @@ encode_ofp_experimenter_stats(Type, Body) when is_atom(Type) ->
 
 encode_action(#ofp_action_output{port = Port, max_len = MaxLen}) ->
     encode_ofs_action_output(Port, MaxLen);
-
-encode_action(#ofp_action_vlan_vid{vlan_vid = VlanVid}) ->
-    encode_ofs_action_vlan_vid(VlanVid);
-
-encode_action(#ofp_action_vlan_pcp{vlan_pcp = VlanPcp}) ->
-    encode_ofs_action_vlan_pcp(VlanPcp);
-
-encode_action(#ofp_action_dl_addr{type = Type, dl_addr = DlAddr}) ->
-    encode_ofs_action_dl_addr(Type, DlAddr);
-
-encode_action(#ofp_action_nw_addr{type = Type, nw_addr = NwAddr}) ->
-    encode_ofs_action_nw_addr(Type, NwAddr);
-
-encode_action(#ofp_action_nw_tos{nw_tos = NwTos}) ->
-    encode_ofs_action_nw_tos(NwTos);
-
-encode_action(#ofp_action_set_nw_ecn{ecn = ECN}) ->
-    encode_ofs_action_set_nw_ecn(ECN);
-
-encode_action(#ofp_action_tp_port{type = Type, tp_port = TpPort}) ->
-    encode_ofs_action_tp_addr(Type, TpPort);
 
 encode_action(#ofp_action_copy_ttl_out{}) ->
     encode_ofs_action_copy_ttl_out();
@@ -1489,6 +1412,9 @@ encode_action(#ofp_action_set_nw_ttl{ttl = TTL}) ->
 
 encode_action(#ofp_action_dec_nw_ttl{}) ->
     encode_ofs_action_dec_nw_ttl();
+
+encode_action(#ofp_action_set_field{tlv = TLV}) ->
+    encode_ofs_action_set_field(TLV);
 
 encode_action(#ofp_action_experimenter{experimenter = Experimenter, msg = Msg}) ->
     encode_ofs_action_experimenter(Experimenter, Msg);
@@ -1669,7 +1595,7 @@ encode_ofp_match(Match) ->
 ?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ETH_DST, 48, bits, eth_dst);
 ?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ETH_SRC, 48, bits, eth_src);
 ?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ETH_SRC, 48, bits, eth_src);
-?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ETH_TYPE, 16, bits, eth_type);
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ETH_TYPE, 16, integer, eth_type);
 
 encode_oxm_tlv({vlan_vid, none}) ->
     <<?OFPXMC_OPENFLOW_BASIC:16, ?OFPXMT_OFB_VLAN_VID:7, 0:1, 2:8, 16#0000:2>>;
