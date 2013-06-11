@@ -146,26 +146,8 @@ modify_flow(Sw, Match, Cookie, IdleTimeout, HardTimeout,
 
 modify_flow(Sw, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
             Actions, BufferId, Priority, InPort, Packet) ->
-    MatchBin = flower_packet:encode_match(Match),
-    ActionsBin = flower_packet:encode_actions(Actions),
-    PktOut = flower_packet:encode_ofp_flow_mod(MatchBin, Cookie, ModCmd,
-                                               IdleTimeout, HardTimeout,
-                                               Priority, BufferId,
-                                               none, 1, ActionsBin),
-
-    %% apply Actions automatically for buffered packets
-    %% (BufferId /= ?OFP_NO_BUFFER)
-    send(Sw, flow_mod, PktOut),
-    if
-	BufferId == ?OFP_NO_BUFFER,
-	Packet /= none ->
-            %% only explicitly send unbuffered packets
-	    send_packet(Sw, Packet, Actions, InPort);
-	true ->
-	    ok
-    end,
-    flower_dispatcher:dispatch({flow, mod}, Sw, Match),
-    ok.
+    gen_fsm:send_event(Sw, {modify_flow, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
+				 Actions, BufferId, Priority, InPort, Packet}).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -372,6 +354,64 @@ connected({send, Type, Msg}, State) ->
 
 connected({send, Type, Xid, Msg}, State) ->
     send_pkt(Type, Xid, Msg, {next_state, connected, State});
+
+connected({modify_flow, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
+	   Actions, BufferId, Priority, InPort, Packet}, State)
+  when State#state.version == 1 ->
+    MatchBin = flower_packet:encode_match(Match),
+    ActionsBin = flower_packet:encode_actions(Actions),
+    PktOut = flower_packet:encode_ofp_flow_mod(MatchBin, Cookie, ModCmd,
+                                               IdleTimeout, HardTimeout,
+                                               Priority, BufferId,
+                                               none, 1, ActionsBin),
+
+    send(self(), flow_mod, PktOut),
+    if
+	BufferId == ?OFP_NO_BUFFER,
+	Packet /= none ->
+            %% only explicitly send unbuffered packets
+	    send_packet(self(), Packet, Actions, InPort);
+	true ->
+	    ok
+    end,
+    flower_dispatcher:dispatch({flow, mod}, self(), Match),
+    {next_state, connected, State};
+
+connected({modify_flow, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
+	   Actions, BufferId, Priority, InPort, Packet}, State)
+  when State#state.version == 3 ->
+    Msg = #ofp_flow_mod_v12{
+      	  cookie       = Cookie,
+	  cookie_mask  = 16#ffffffffffffffff,
+	  table_id     = 0,
+	  command      = ModCmd,
+	  idle_timeout = IdleTimeout,
+	  hard_timeout = HardTimeout,
+	  priority     = Priority,
+	  buffer_id    = BufferId,
+	  out_port     = any,
+	  out_group    = any,
+	  flags	       = [],
+	  match        = Match,
+	  instructions = #ofp_instruction_actions{
+	    type = apply_actions,
+	    actions = Actions
+	   }
+     },
+
+    %% apply Actions automatically for buffered packets
+    %% (BufferId /= ?OFP_NO_BUFFER)
+    send(self(), flow_mod, Msg),
+    if
+	BufferId == ?OFP_NO_BUFFER,
+	Packet /= none ->
+            %% only explicitly send unbuffered packets
+	    send_packet(self(), Packet, Actions, InPort);
+	true ->
+	    ok
+    end,
+    flower_dispatcher:dispatch({flow, mod}, self(), Match),
+    {next_state, connected, State};
 
 connected(Msg, State) ->
     ?DEBUG("unhandled message: ~w", [Msg]),
