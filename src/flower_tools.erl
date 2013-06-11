@@ -4,6 +4,7 @@
 
 -export([ip_to_tuple/1, tuple_to_ip/1]).
 -export([format_ip/1, format_mac/1]).
+-export([ip_csum/1, ether_hdr/4]).
 -export([format_flow/1]).
 -export([hexdump/1]).
 
@@ -34,6 +35,22 @@ format_ip(<<A:16, B:16, C:16, D:16, E:16, F:16, G:16, H:16>>) ->
 format_ip(IP) ->
     flat_format("~w", IP).
 
+ip_csum(<<>>, CSum) ->
+    CSum;
+ip_csum(<<Head:8/integer>>, CSum) ->
+    CSum + Head * 256;
+ip_csum(<<Head:16/integer, Tail/binary>>, CSum) ->
+    ip_csum(Tail, CSum + Head).
+
+ip_csum(Bin) ->
+    CSum = ip_csum(Bin, 0),
+    ((CSum band 16#ffff) + (CSum bsr 16)) bxor 16#ffff.
+
+-spec ether_hdr(binary(), binary(), vlan_tci(), integer()) -> binary().
+ether_hdr(DlDst, DlSrc, undefined, EthType) ->
+    <<DlDst:?ETH_ADDR_LEN/bytes-unit:8, DlSrc:?ETH_ADDR_LEN/bytes-unit:8, EthType:16>>;
+ether_hdr(DlDst, DlSrc, {PCP, VID}, EthType) ->
+    <<DlDst:?ETH_ADDR_LEN/bytes-unit:8, DlSrc:?ETH_ADDR_LEN/bytes-unit:8, 16#8100:16, PCP:3, 0:1, VID:12, EthType:16>>.
 
 format_flow(#flow{tun_id = TunId, nw_src = NwSrc, nw_dst = NwDst, in_port = InPort, vlan_tci = VlanTci,
 		  dl_type = DlType, dl_src = DlSrc, dl_dst = DlDst,
