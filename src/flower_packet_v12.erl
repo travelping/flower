@@ -114,11 +114,21 @@ encode([Msg|Rest], Acc) ->
 -define(OFPXMT_OFB_MPLS_TC,		35).		%% MPLS TC.
 
 %% ROFL PPP/PPPoE related extensions
--define(OFPXMT_OFB_PPPOE_CODE,		36).		%% PPPoE code
--define(OFPXMT_OFB_PPPOE_TYPE,		37).		%% PPPoE type
--define(OFPXMT_OFB_PPPOE_SID,		38).		%% PPPoE session id
--define(OFPXMT_OFB_PPP_PROT,		39).		%% PPP protocol
+-define(OFPXMT_OFB_PPPOE_CODE,		40).		%% PPPoE code
+-define(OFPXMT_OFB_PPPOE_TYPE,		41).		%% PPPoE type
+-define(OFPXMT_OFB_PPPOE_SID,		42).		%% PPPoE session id
+-define(OFPXMT_OFB_PPP_PROT,		43).		%% PPP protocol
 
+-define(OFPXMT_OFB_CAPWAP_WBID,         50).		%% CAPWAP Wireless Binding Id
+-define(OFPXMT_OFB_CAPWAP_RID,          51).		%% CAPWAP Radio Id
+
+-define(OFPXMT_OFB_IEEE80211_FC,        60).		%% IEEE 802.11 Frame Control field
+-define(OFPXMT_OFB_IEEE80211_TYPE,      61).		%% IEEE 802.11 Type field
+-define(OFPXMT_OFB_IEEE80211_SUBTYPE,   62).		%% IEEE 802.11 SubType field
+-define(OFPXMT_OFB_IEEE80211_DIRECTION, 63).		%% IEEE 802.11 FromDS / ToDS fields
+-define(OFPXMT_OFB_IEEE80211_ADDRESS_1, 64).		%% IEEE 802.11 Address 1 field
+-define(OFPXMT_OFB_IEEE80211_ADDRESS_2, 65).		%% IEEE 802.11 Address 2 field
+-define(OFPXMT_OFB_IEEE80211_ADDRESS_3, 66).		%% IEEE 802.11 Address 3 field
 
 ofp_xmt_type() ->
     [in_port, in_phy_port, metadata, eth_dst, eth_src, eth_type, vlan_vid,
@@ -496,6 +506,10 @@ ofp_action_type() ->
      group,		%% Apply group.
      set_nw_ttl,	%% IP TTL.
      dec_nw_ttl,	%% Decrement IP TTL.
+     push_capwap,
+     pop_capwap,
+     push_ieee80211,
+     pop_ieee80211,
      experimenter].
 
 
@@ -891,6 +905,21 @@ decode_oxm_tlvs(Data, TLVs) ->
 	?MATCH_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_PPPOE_SID, 16, integer, pppoe_sid);
 	?MATCH_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_PPP_PROT, 16, integer, ppp_prot);
 
+	?MATCH_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_CAPWAP_WBID, 8, integer, capwap_wbid);
+	?MATCH_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_CAPWAP_RID, 8, integer, capwap_rid);
+
+	?MATCH_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IEEE80211_FC, 16, integer, ieee80211_fc);
+	?MATCH_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IEEE80211_FC, 16, integer, ieee80211_fc);
+	?MATCH_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IEEE80211_TYPE, 8, integer, ieee80211_type);
+	?MATCH_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IEEE80211_SUBTYPE, 8, integer, ieee80211_subtype);
+	?MATCH_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IEEE80211_DIRECTION, 8, integer, ieee80211_direction);
+	?MATCH_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IEEE80211_ADDRESS_1, 48, bits, ieee80211_address_1);
+	?MATCH_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IEEE80211_ADDRESS_1, 48, bits, ieee80211_address_1);
+	?MATCH_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IEEE80211_ADDRESS_2, 48, bits, ieee80211_address_2);
+	?MATCH_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IEEE80211_ADDRESS_2, 48, bits, ieee80211_address_2);
+	?MATCH_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IEEE80211_ADDRESS_3, 48, bits, ieee80211_address_3);
+	?MATCH_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IEEE80211_ADDRESS_3, 48, bits, ieee80211_address_3);
+
 	<<Class:16/integer, Field:7/integer, 0:1, Length:8/integer, Rest/binary>> ->
 	    <<Value:Length/binary, Next/binary>> = Rest,
 	    TLV = {{Class, Field}, Value};
@@ -977,6 +1006,14 @@ decode_action(24, 0, <<_:32>>) ->
 decode_action(25, 0, <<Data>>) ->
     [TLV] = decode_oxm_tlvs(Data, []),
     #ofp_action_set_field{tlv = TLV};
+decode_action(100, 0, <<_:32>>) ->
+    #ofp_action_push_capwap{};
+decode_action(101, 0, <<_:32>>) ->
+    #ofp_action_pop_capwap{};
+decode_action(102, 0, <<_:32>>) ->
+    #ofp_action_push_ieee80211{};
+decode_action(103, 0, <<_:32>>) ->
+    #ofp_action_pop_ieee80211{};
 
 decode_action(16#FFFF, Length, <<Experimenter:32, Msg/binary>> = PayLoad)
   when Length == size(PayLoad) ->
@@ -1348,6 +1385,22 @@ encode_ofs_action_dec_nw_ttl() ->
 encode_ofs_action_set_field(TLV) ->
     encode_ofs_action(25, encode_oxm_tlv(TLV)).
 
+-spec encode_ofs_action_push_capwap() -> binary().
+encode_ofs_action_push_capwap() ->
+    encode_ofs_action(100, <<0:32>>).
+
+-spec encode_ofs_action_pop_capwap() -> binary().
+encode_ofs_action_pop_capwap() ->
+    encode_ofs_action(101, <<0:32>>).
+
+-spec encode_ofs_action_push_ieee80211() -> binary().
+encode_ofs_action_push_ieee80211() ->
+    encode_ofs_action(102, <<0:32>>).
+
+-spec encode_ofs_action_pop_ieee80211() -> binary().
+encode_ofs_action_pop_ieee80211() ->
+    encode_ofs_action(103, <<0:32>>).
+
 -spec encode_ofs_action_experimenter(int32(), binary()) -> binary().
 encode_ofs_action_experimenter(Experimenter, Msg) ->
     encode_ofs_action(16#FFFF, <<Experimenter:32, (pad_to(8, Msg))/binary>>).
@@ -1415,6 +1468,18 @@ encode_action(#ofp_action_dec_nw_ttl{}) ->
 
 encode_action(#ofp_action_set_field{tlv = TLV}) ->
     encode_ofs_action_set_field(TLV);
+
+encode_action(#ofp_action_push_capwap{}) ->
+    encode_ofs_action_push_capwap();
+
+encode_action(#ofp_action_pop_capwap{}) ->
+    encode_ofs_action_pop_capwap();
+
+encode_action(#ofp_action_push_ieee80211{}) ->
+    encode_ofs_action_push_ieee80211();
+
+encode_action(#ofp_action_pop_ieee80211{}) ->
+    encode_ofs_action_pop_ieee80211();
 
 encode_action(#ofp_action_experimenter{experimenter = Experimenter, msg = Msg}) ->
     encode_ofs_action_experimenter(Experimenter, Msg);
@@ -1663,6 +1728,21 @@ encode_oxm_tlv({mpls_tc, Value}) ->
 ?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_PPPOE_TYPE, 8, integer, pppoe_type);
 ?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_PPPOE_SID, 16, integer, pppoe_sid);
 ?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_PPP_PROT, 16, integer, ppp_prot);
+
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_CAPWAP_WBID, 8, integer, capwap_wbid);
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_CAPWAP_RID, 8, integer, capwap_rid);
+
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IEEE80211_FC, 16, integer, ieee80211_fc);
+?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IEEE80211_FC, 16, integer, ieee80211_fc);
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IEEE80211_TYPE, 8, integer, ieee80211_type);
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IEEE80211_SUBTYPE, 8, integer, ieee80211_subtype);
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IEEE80211_DIRECTION, 8, integer, ieee80211_direction);
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IEEE80211_ADDRESS_1, 48, bits, ieee80211_address_1);
+?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IEEE80211_ADDRESS_1, 48, bits, ieee80211_address_1);
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IEEE80211_ADDRESS_2, 48, bits, ieee80211_address_2);
+?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IEEE80211_ADDRESS_2, 48, bits, ieee80211_address_2);
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IEEE80211_ADDRESS_3, 48, bits, ieee80211_address_3);
+?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IEEE80211_ADDRESS_3, 48, bits, ieee80211_address_3);
 
 encode_oxm_tlv({{Class, Field}, {Value, Mask}}) ->
     Length = size(Value) + size(Mask),
