@@ -444,8 +444,11 @@ connected(features, _From, #state{features = Features} = State) ->
     Reply = Features,
     {reply, Reply, connected, State};
 
-connected({portinfo, Port}, _From, #state{features = Features} = State) ->
+connected({portinfo, Port}, _From, #state{features = Features} = State) when is_integer(Port) ->
     Reply = lists:keyfind(Port, #ofp_phy_port.port_no, Features#ofp_switch_features.ports),
+    {reply, Reply, connected, State};
+connected({portinfo, Port}, _From, #state{features = Features} = State) when is_binary(Port) ->
+    Reply = lists:keyfind(Port, #ofp_phy_port.name, Features#ofp_switch_features.ports),
     {reply, Reply, connected, State};
 
 connected({stats_request, Type, Msg, Timeout}, From, State) ->
