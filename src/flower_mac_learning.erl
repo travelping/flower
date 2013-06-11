@@ -5,6 +5,7 @@
 %% API
 -export([start_link/0, insert/2, insert/3, lookup/1, lookup/2,
 	 expire/0, may_learn/1, may_learn/2, eth_addr_is_reserved/1,
+	 is_broadcast/1,
 	 dump/0]).
 
 %% gen_server callbacks
@@ -57,6 +58,10 @@ may_learn(<<_:7, BCast:1, _/binary>> = _MAC) ->
 may_learn(<<_:7, BCast:1, _/binary>> = _MAC, _VLan) ->
     (BCast =/= 1).
 
+is_broadcast(<<_:7, 1:1, _/binary>> = _MAC) ->
+    true;
+is_broadcast(_) ->
+    false.
 
 %%
 %% Some well known Ethernet multicast addresses[11]
