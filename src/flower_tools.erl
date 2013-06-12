@@ -43,8 +43,9 @@ ip_csum(<<Head:16/integer, Tail/binary>>, CSum) ->
     ip_csum(Tail, CSum + Head).
 
 ip_csum(Bin) ->
-    CSum = ip_csum(Bin, 0),
-    ((CSum band 16#ffff) + (CSum bsr 16)) bxor 16#ffff.
+    CSum0 = ip_csum(Bin, 0),
+    CSum1 = ((CSum0 band 16#ffff) + (CSum0 bsr 16)),
+    ((CSum1 band 16#ffff) + (CSum1 bsr 16)) bxor 16#ffff.
 
 -spec ether_hdr(binary(), binary(), vlan_tci(), integer()) -> binary().
 ether_hdr(DlDst, DlSrc, undefined, EthType) ->
