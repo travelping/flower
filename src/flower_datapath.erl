@@ -18,8 +18,11 @@
 -export([init/1, handle_event/3,
 	 handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
 -export([setup/2, setup/3, open/2, open/3, connecting/2, connecting/3, connected/2, connected/3]).
--export([install_flow/10, send_packet/4, send_buffer/4, send_packet/5, portinfo/2,
-         remove_flow/10, remove_all_flows/1, modify_flow/10, modify_flow/11]).
+-export([send_packet/4, send_buffer/4, send_packet/5, portinfo/2,
+	 install_flow/10, install_flow/11,
+	 modify_flow/10, modify_flow/11,
+         remove_flow/10, remove_flow/11,
+	 remove_all_flows/1, remove_all_flows/2]).
 -export([counters/0, counters/1, features/1, features_all/0, version/1]).
 
 -define(SERVER, ?MODULE).
@@ -127,26 +130,51 @@ features_all() ->
 %%--------------------------------------------------------------------
 install_flow(Sw, Match, Cookie, IdleTimeout, HardTimeout,
 	     Actions, BufferId, Priority, InPort, Packet) ->
-    modify_flow(Sw, Match, Cookie, add, IdleTimeout, HardTimeout,
+    modify_flow(Sw, 0, Match, Cookie, add, IdleTimeout, HardTimeout,
+                Actions, BufferId, Priority, InPort, Packet).
+
+install_flow(Sw, Table, Match, Cookie, IdleTimeout, HardTimeout,
+	     Actions, BufferId, Priority, InPort, Packet) ->
+    modify_flow(Sw, Table, Match, Cookie, add, IdleTimeout, HardTimeout,
                 Actions, BufferId, Priority, InPort, Packet).
 
 remove_all_flows(Sw) ->
     remove_flow(Sw, flower_match:encode_ofp_match([]),
                 0, 0, 0, [], ?OFP_NO_BUFFER, 0, 0, <<>>).
 
+remove_all_flows(Sw, Table) ->
+    remove_flow(Sw, Table, flower_match:encode_ofp_match([]),
+                0, 0, 0, [], ?OFP_NO_BUFFER, 0, 0, <<>>).
+
 remove_flow(Sw, Match, Cookie, IdleTimeout, HardTimeout,
 	     Actions, BufferId, Priority, InPort, Packet) ->
-    modify_flow(Sw, Match, Cookie, delete, IdleTimeout, HardTimeout,
+    modify_flow(Sw, 0, Match, Cookie, delete, IdleTimeout, HardTimeout,
+                Actions, BufferId, Priority, InPort, Packet).
+
+remove_flow(Sw, Table, Match, Cookie, IdleTimeout, HardTimeout,
+	     Actions, BufferId, Priority, InPort, Packet) ->
+    modify_flow(Sw, Table, Match, Cookie, delete, IdleTimeout, HardTimeout,
                 Actions, BufferId, Priority, InPort, Packet).
 
 modify_flow(Sw, Match, Cookie, IdleTimeout, HardTimeout,
 	     Actions, BufferId, Priority, InPort, Packet) ->
-    modify_flow(Sw, Match, Cookie, modify, IdleTimeout, HardTimeout,
+    modify_flow(Sw, 0, Match, Cookie, modify, IdleTimeout, HardTimeout,
                 Actions, BufferId, Priority, InPort, Packet).
+
+modify_flow(Sw, Table, Match, Cookie, IdleTimeout, HardTimeout,
+	     Actions, BufferId, Priority, InPort, Packet)
+  when is_integer(Table)  ->
+    modify_flow(Sw, Table, Match, Cookie, modify, IdleTimeout, HardTimeout,
+                Actions, BufferId, Priority, InPort, Packet);
 
 modify_flow(Sw, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
             Actions, BufferId, Priority, InPort, Packet) ->
-    gen_fsm:send_event(Sw, {modify_flow, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
+    modify_flow(Sw, 0, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
+		Actions, BufferId, Priority, InPort, Packet).
+
+modify_flow(Sw, Table, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
+            Actions, BufferId, Priority, InPort, Packet) ->
+    gen_fsm:send_event(Sw, {modify_flow, Table, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
 				 Actions, BufferId, Priority, InPort, Packet}).
 
 %%--------------------------------------------------------------------
@@ -359,7 +387,7 @@ connected({send, Type, Msg}, State) ->
 connected({send, Type, Xid, Msg}, State) ->
     send_pkt(Type, Xid, Msg, {next_state, connected, State});
 
-connected({modify_flow, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
+connected({modify_flow, _Table, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
 	   Actions, BufferId, Priority, InPort, Packet}, State)
   when State#state.version == 1 ->
     MatchBin = flower_packet:encode_match(Match),
@@ -381,13 +409,13 @@ connected({modify_flow, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
     flower_dispatcher:dispatch({flow, mod}, self(), Match),
     {next_state, connected, State};
 
-connected({modify_flow, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
+connected({modify_flow, Table, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
 	   Actions, BufferId, Priority, InPort, Packet}, State)
   when State#state.version == 3 ->
     Msg = #ofp_flow_mod_v12{
       	  cookie       = Cookie,
 	  cookie_mask  = 16#ffffffffffffffff,
-	  table_id     = 0,
+	  table_id     = Table,
 	  command      = ModCmd,
 	  idle_timeout = IdleTimeout,
 	  hard_timeout = HardTimeout,
