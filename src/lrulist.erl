@@ -251,7 +251,7 @@ delete_lru(Key, ATime, LRUTree) ->
 enter_lru(Key, ATime, LRUTree) ->
     case gb_trees:is_defined(ATime, LRUTree) of
 	true ->
-	    gb_trees_update_fun(ATime, fun(List) -> lists:merge(List, [Key]) end, LRUTree);
+	    gb_trees_update_fun(ATime, fun(List) -> lists:umerge(List, [Key]) end, LRUTree);
 	false ->
 	    gb_trees:insert(ATime, [Key], LRUTree)
     end.
