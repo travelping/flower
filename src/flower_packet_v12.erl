@@ -121,6 +121,7 @@ encode([Msg|Rest], Acc) ->
 
 -define(OFPXMT_OFB_CAPWAP_WBID,         50).		%% CAPWAP Wireless Binding Id
 -define(OFPXMT_OFB_CAPWAP_RID,          51).		%% CAPWAP Radio Id
+-define(OFPXMT_OFB_CAPWAP_TYPE,         52).		%% CAPWAP Type Flag
 
 -define(OFPXMT_OFB_IEEE80211_FC,        60).		%% IEEE 802.11 Frame Control field
 -define(OFPXMT_OFB_IEEE80211_TYPE,      61).		%% IEEE 802.11 Type field
@@ -907,6 +908,7 @@ decode_oxm_tlvs(Data, TLVs) ->
 
 	?MATCH_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_CAPWAP_WBID, 8, integer, capwap_wbid);
 	?MATCH_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_CAPWAP_RID, 8, integer, capwap_rid);
+	?MATCH_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_CAPWAP_TYPE, 8, integer, capwap_type);
 
 	?MATCH_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IEEE80211_FC, 16, integer, ieee80211_fc);
 	?MATCH_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IEEE80211_FC, 16, integer, ieee80211_fc);
@@ -1731,6 +1733,7 @@ encode_oxm_tlv({mpls_tc, Value}) ->
 
 ?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_CAPWAP_WBID, 8, integer, capwap_wbid);
 ?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_CAPWAP_RID, 8, integer, capwap_rid);
+?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_CAPWAP_TYPE, 8, integer, capwap_type);
 
 ?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IEEE80211_FC, 16, integer, ieee80211_fc);
 ?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IEEE80211_FC, 16, integer, ieee80211_fc);
