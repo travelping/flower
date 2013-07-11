@@ -578,7 +578,7 @@
 %% Send packet (controller -> datapath).
 -record(ofp_packet_out, {
 	  buffer_id = ?OFP_NO_BUFFER	:: non_neg_integer(),	%% ID assigned by datapath (-1 if none).
-	  in_port = none	:: ofp_port(),			%% Packet's input port
+	  in_port = controller		:: ofp_port(),			%% Packet's input port
 	  actions = []		:: ofp_actions(),		%% Actions.
 	  data = <<>>		:: binary()			%% Packet data.
 }).
