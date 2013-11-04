@@ -11,6 +11,10 @@
 -define(IP_MORE_FRAGMENTS, 16#2000).
 -define(IP_FRAG_OFF_MASK,  16#1fff).
 
+-define(LLC_DSAP_BPDU, 16#42).
+-define(LLC_SSAP_BPDU, 16#42).
+-define(LLC_CNTL_BPDU, 3).
+
 -define(LLC_DSAP_SNAP, 16#aa).
 -define(LLC_SSAP_SNAP, 16#aa).
 -define(LLC_CNTL_SNAP, 3).
