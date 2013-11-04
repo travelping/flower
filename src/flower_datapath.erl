@@ -301,17 +301,24 @@ setup(_Msg, _From, State) ->
     Reply = {error, not_connected},
     {reply, Reply, setup, State, ?RECONNECT_TIMEOUT}.
 
-open({hello, Version, Xid, _Msg}, State) 
+open({hello, Version, _Xid, _Msg}, State)
   when Version > ?VERSION ->
     ?DEBUG("got hello in open"),
-    Reply = #ofp_error{error = hello_failed, data = incompatible},
-    send_pkt(error, Xid, Reply, {stop, normal, State});
+    %% Take our version has highest supported
+    NewState = State#state{version = ?VERSION},
+    send_request(features_request, <<>>, {next_state, connecting, NewState, ?REQUEST_TIMEOUT});
 
-open({hello, Version, _Xid, _Msg}, State) ->
+open({hello, Version, _Xid, _Msg}, State)
+  when Version == 1; Version == ?VERSION ->
     ?DEBUG("got hello in open"),
     %% Accept their Idea of version if we support it
     NewState = State#state{version = Version},
     send_request(features_request, <<>>, {next_state, connecting, NewState, ?REQUEST_TIMEOUT});
+
+open({hello, _Version, Xid, _Msg}, State) ->
+    ?DEBUG("got hello in open"),
+    Reply = #ofp_error{error = hello_failed, data = incompatible},
+    send_pkt(error, Xid, Reply, {stop, normal, State});
 
 open(Msg, State)
   when element(1, Msg) =:= send ->
