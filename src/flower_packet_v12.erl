@@ -4,7 +4,7 @@
 -export([encode/1, encode_msg/1, decode/1]).
 %% constant mappers
 -export([ofpt/1, ofp_packet_in_reason/1, ofp_config_flags/1,
-	 ofp_flow_mod_command/1, ofp_port/1, eth_type/1]).
+	 ofp_flow_mod_command/1, eth_type/1]).
 %% part encoders
 -export([encode_actions/1,
 	 encode_action/1]).
@@ -603,27 +603,29 @@ ofp_group(X) when is_integer(X) -> X;
 ofp_group(all)		-> 16#fffffffc;
 ofp_group(any)		-> 16#ffffffff.
 
--spec ofp_port(non_neg_integer()) -> ofp_port_name() | non_neg_integer();
-	      (ofp_port_name()) -> non_neg_integer().
+-spec dec_ofp_port(non_neg_integer()) -> ofp_port_name() | non_neg_integer().
 %% Port numbering.  Physical ports are numbered starting from 1.
-ofp_port(16#fffffff8) -> in_port;
-ofp_port(16#fffffff9) -> table;
-ofp_port(16#fffffffa) -> normal;
-ofp_port(16#fffffffb) -> flood;
-ofp_port(16#fffffffc) -> all;
-ofp_port(16#fffffffd) -> controller;
-ofp_port(16#fffffffe) -> local;
-ofp_port(16#ffffffff) -> any;
-ofp_port(X) when is_integer(X) -> X;
+dec_ofp_port(16#fffffff8) -> in_port;
+dec_ofp_port(16#fffffff9) -> table;
+dec_ofp_port(16#fffffffa) -> normal;
+dec_ofp_port(16#fffffffb) -> flood;
+dec_ofp_port(16#fffffffc) -> all;
+dec_ofp_port(16#fffffffd) -> controller;
+dec_ofp_port(16#fffffffe) -> local;
+dec_ofp_port(16#ffffffff) -> any;
+dec_ofp_port(X) when is_integer(X) -> X.
 
-ofp_port(in_port)    -> 16#fffffff8;
-ofp_port(table)      -> 16#fffffff9;
-ofp_port(normal)     -> 16#fffffffa;
-ofp_port(flood)      -> 16#fffffffb;
-ofp_port(all)        -> 16#fffffffc;
-ofp_port(controller) -> 16#fffffffd;
-ofp_port(local)      -> 16#fffffffe;
-ofp_port(any)        -> 16#ffffffff.
+-spec enc_ofp_port(non_neg_integer()) -> non_neg_integer();
+		  (ofp_port_name()) -> non_neg_integer().
+enc_ofp_port(X) when is_integer(X) -> X;
+enc_ofp_port(in_port)    -> 16#fffffff8;
+enc_ofp_port(table)      -> 16#fffffff9;
+enc_ofp_port(normal)     -> 16#fffffffa;
+enc_ofp_port(flood)      -> 16#fffffffb;
+enc_ofp_port(all)        -> 16#fffffffc;
+enc_ofp_port(controller) -> 16#fffffffd;
+enc_ofp_port(local)      -> 16#fffffffe;
+enc_ofp_port(any)        -> 16#ffffffff.
 
 ofp_table(16#fe) -> emergency; 
 ofp_table(16#ff) -> all;
@@ -743,7 +745,7 @@ decode_msg(port_status, <<Reason:8/integer, _Pad:7/bytes, PhyPort/binary>>) ->
 		     port = decode_phy_port(PhyPort)};
 
 decode_msg(packet_out, <<BufferId:32/integer, InPort:32/integer, ActionsLen:16/integer, _Pad:6/bytes, Actions:ActionsLen/bytes, Data/binary>>) ->
-    #ofp_packet_out{buffer_id = BufferId, in_port = ofp_port(InPort), actions = decode_actions(Actions), data = Data};
+    #ofp_packet_out{buffer_id = BufferId, in_port = dec_ofp_port(InPort), actions = decode_actions(Actions), data = Data};
 
 decode_msg(flow_mod, <<Cookie:64/integer, CookieMask:64/integer, TableId:8/integer,
 		       Command:8/integer, IdleTimeout:16/integer, HardTimeout:16/integer,
@@ -757,7 +759,7 @@ decode_msg(flow_mod, <<Cookie:64/integer, CookieMask:64/integer, TableId:8/integ
 		      command = ofp_flow_mod_command(Command),
 		      idle_timeout = IdleTimeout, hard_timeout = HardTimeout,
 		      priority = Priority, buffer_id = BufferId,
-		      out_port = ofp_port(OutPort), out_group = ofp_group(OutGroup),
+		      out_port = dec_ofp_port(OutPort), out_group = ofp_group(OutGroup),
 		      flags = dec_flags(ofp_flow_mod_flags(), Flags),
 		      match = decode_ofp_match(Match),
 		      instructions = decode_ofp_instructions(Instructions)};
@@ -783,10 +785,10 @@ decode_msg(stats_reply, <<Type:16/integer, _Flags:16/integer, _Pad:4/bytes, Msg/
     decode_stats_reply(ofp_stats_type(Type), [], Msg);
 
 decode_msg(queue_get_config_request, <<Port:32/integer, _Pad:4/bytes>>) ->
-    #ofp_queue_get_config_request{port = ofp_port(Port)};
+    #ofp_queue_get_config_request{port = dec_ofp_port(Port)};
 
 decode_msg(ofp_queue_get_config_reply, <<Port:32/integer, _Pad:4/bytes, Queues/binary>>) ->
-    #ofp_queue_get_config_reply{port = ofp_port(Port), queues = decode_queues(Queues)};
+    #ofp_queue_get_config_reply{port = dec_ofp_port(Port), queues = decode_queues(Queues)};
 
 %%---------------------------
 %% Experimenter Extensions
@@ -811,6 +813,10 @@ decode_rofl_flowspace(<<2:8/integer, _Pad:3/bytes, Match/binary>>) ->
 	<<Class:16/integer, Field:7/integer, 0:1, (Length div 8):8/integer,
 	  Value:Length/Type, Next/binary>> -> TLV = {Atom, Value}).
 
+-define(MATCH_OXM_TLV_MAP(Class, Field, Length, Type, Atom, MAP),
+	<<Class:16/integer, Field:7/integer, 0:1, (Length div 8):8/integer,
+	  Value:Length/Type, Next/binary>> -> TLV = {Atom, MAP(Value)}).
+
 -define(MATCH_OXM_MASK_TLV(Class, Field, Length, Type, Atom),
 	<<Class:16/integer, Field:7/integer, 1:1, (Length div 4):8/integer,
 	  Value:Length/Type, Mask:Length/Type, Next/binary>> -> TLV = {Atom, Value, Mask}).
@@ -819,8 +825,8 @@ decode_oxm_tlvs(<<>>, TLVs) ->
     lists:reverse(TLVs);
 decode_oxm_tlvs(Data, TLVs) ->
     case Data of
-	?MATCH_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IN_PORT, 32, integer, in_port);
-	?MATCH_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IN_PHY_PORT, 32, integer, in_phy_port);
+	?MATCH_OXM_TLV_MAP(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IN_PORT, 32, integer, in_port, dec_ofp_port);
+	?MATCH_OXM_TLV_MAP(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IN_PHY_PORT, 32, integer, in_phy_port, dec_ofp_port);
 	?MATCH_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_METADATA, 64, bits, metadata);
 	?MATCH_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_METADATA, 64, bits, metadata);
 	?MATCH_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ETH_DST, 48, bits, eth_dst);
@@ -966,7 +972,7 @@ decode_ofp_buckets(<<Len:16/integer, Weight:16/integer, WatchPort:32/integer,
 		     WatchGroup:32/integer, _Pad:4/bytes, Rest/binary>>, Acc) ->
     ActionsLen = Len - 16,
     <<Actions:ActionsLen/bytes, Next>> = Rest,
-    Bucket = #ofp_bucket{weight = Weight, watch_port = ofp_port(WatchPort),
+    Bucket = #ofp_bucket{weight = Weight, watch_port = dec_ofp_port(WatchPort),
 			 watch_group = WatchGroup, actions = decode_actions(Actions)},
     decode_ofp_buckets(Next, [Bucket|Acc]).
 
@@ -975,7 +981,7 @@ decode_experimenter_action(Experimenter, Msg) ->
 
 -spec decode_action(Type :: non_neg_integer(), Length :: non_neg_integer(), binary()) -> ofp_action().
 decode_action(0, 8, <<Port:32/integer, MaxLen:16/integer, _:48>>) ->
-    #ofp_action_output{port = ofp_port(Port), max_len = MaxLen};
+    #ofp_action_output{port = dec_ofp_port(Port), max_len = MaxLen};
 decode_action(1, 4, <<VlanVid:16/integer, _:16>>) ->
     #ofp_action_vlan_vid{vlan_vid = VlanVid};
 decode_action(11, 0, <<>>) ->
@@ -1041,7 +1047,7 @@ decode_phy_port(<<PortNo:32/integer, _Pad1:4/bytes,
 		  Curr:32/integer, Advertised:32/integer,
 		  Supported:32/integer, Peer:32/integer,
 		  CurrSpeed:32/integer, MaxSpeed:32/integer>>) ->
-    #ofp_phy_port{port_no = ofp_port(PortNo),
+    #ofp_phy_port{port_no = dec_ofp_port(PortNo),
 		  hw_addr = HwAddr,
 		  name = decode_binstring(Name),
 		  config = dec_flags(ofp_port_config(), Config),
@@ -1075,7 +1081,7 @@ decode_queues(<<QueueId:32/integer, Port:32/integer, Len:16/integer, _Pad:6/byte
     DescLen = Len - 8,
     <<Desc:DescLen/bytes, Rest/binary>> = Data,
     Properties = decode_queues(Rest, [decode_queue_props(Desc, [])|Acc]),
-    #ofp_packet_queue_v12{queue_id = QueueId, port = ofp_port(Port), properties = Properties}.
+    #ofp_packet_queue_v12{queue_id = QueueId, port = dec_ofp_port(Port), properties = Properties}.
 
 decode_queues(Queues) ->
     decode_queues(Queues, []).
@@ -1091,13 +1097,13 @@ decode_stats_request(desc, <<>>) ->
 
 decode_stats_request(flow, <<TableId:8/integer, _Pad0:3/bytes, OutPort:32/integer, OutGroup:32/integer,
 			     _Pad1:4/bytes, Cookie:64/integer, CookieMask:64/integer, Match/binary>>) ->
-    #ofp_flow_stats_request_v11{table_id = ofp_table(TableId), out_port = ofp_port(OutPort),
+    #ofp_flow_stats_request_v11{table_id = ofp_table(TableId), out_port = dec_ofp_port(OutPort),
 				out_group = ofp_group(OutGroup), cookie = Cookie, cookie_mask = CookieMask,
 				match = decode_ofp_match(Match)};
 
 decode_stats_request(aggregate, <<TableId:8/integer, _Pad0:3/bytes, OutPort:32/integer, OutGroup:32/integer,
 			     _Pad1:4/bytes, Cookie:64/integer, CookieMask:64/integer, Match/binary>>) ->
-    #ofp_aggregate_stats_request_v11{table_id = ofp_table(TableId), out_port = ofp_port(OutPort),
+    #ofp_aggregate_stats_request_v11{table_id = ofp_table(TableId), out_port = dec_ofp_port(OutPort),
 				     out_group = ofp_group(OutGroup), cookie = Cookie, cookie_mask = CookieMask,
 				     match = decode_ofp_match(Match)};
 
@@ -1109,10 +1115,10 @@ decode_stats_request(table, Value)
     #ofp_rofl_broken_table_stats_request{};
 
 decode_stats_request(port, <<Port:32/integer, _Pad:4/bytes>>) ->
-    #ofp_port_stats_request{port_no = ofp_port(Port)};
+    #ofp_port_stats_request{port_no = dec_ofp_port(Port)};
 
 decode_stats_request(queue, <<Port:32/integer, Queue:32/integer>>) ->
-    #ofp_queue_stats_request{port_no = ofp_port(Port), queue_id = ofp_queue(Queue)};
+    #ofp_queue_stats_request{port_no = dec_ofp_port(Port), queue_id = ofp_queue(Queue)};
 
 decode_stats_request(group, <<GroupId:32/integer, _Pad:4/bytes>>) ->
     #ofp_group_stats_request{group_id = GroupId};
@@ -1204,7 +1210,7 @@ decode_stats_reply(port, Acc, <<Port:32/integer, _Pad:4/bytes, RxPackets:64/inte
 				RxBytes:64/integer, TxBytes:64/integer, RxDropped:64/integer, TxDropped:64/integer,
 				RxErrors:64/integer, TxErrors:64/integer, RxFrameErr:64/integer, RxOverErr:64/integer,
 				RxCrcErr:64/integer, Collisions:64/integer, Rest/binary>>) ->
-    R = #ofp_port_stats{port_no = ofp_port(Port), rx_packets = RxPackets, tx_packets = TxPackets,
+    R = #ofp_port_stats{port_no = dec_ofp_port(Port), rx_packets = RxPackets, tx_packets = TxPackets,
 			rx_bytes = RxBytes, tx_bytes = TxBytes, rx_dropped = RxDropped,
 			tx_dropped = TxDropped,	rx_errors = RxErrors, tx_errors = TxErrors,
 			rx_frame_err = RxFrameErr, rx_over_err = RxOverErr,
@@ -1213,7 +1219,7 @@ decode_stats_reply(port, Acc, <<Port:32/integer, _Pad:4/bytes, RxPackets:64/inte
 
 decode_stats_reply(queue, Acc, <<Port:32/integer, Queue:32/integer, TxBytes:64/integer,
 				 TxPackets:64/integer, TxErrors:64/integer, Rest/binary>>) ->
-    R = #ofp_queue_stats{port_no = ofp_port(Port), queue_id = ofp_queue(Queue),
+    R = #ofp_queue_stats{port_no = dec_ofp_port(Port), queue_id = ofp_queue(Queue),
 			 tx_bytes = TxBytes, tx_packets = TxPackets, tx_errors = TxErrors},
     decode_stats_reply(queue, [R|Acc], Rest);
 
@@ -1268,7 +1274,7 @@ encode_phy_port(#ofp_phy_port{port_no = PortNo, hw_addr = HwAddr, name = Name,
 			      advertised = Advertised, supported = Supported,
 			      peer = Peer, curr_speed = CurrSpeed, max_speed = MaxSpeed}) ->
     Name0 = pad_to(16, Name),
-    <<(ofp_port(PortNo)):32, 0:32, HwAddr:6/bytes, 0:16, Name0:16/bytes,
+    <<(enc_ofp_port(PortNo)):32, 0:32, HwAddr:6/bytes, 0:16, Name0:16/bytes,
       (enc_flags(ofp_port_config(), Config)):32,
       (enc_flags(ofp_port_state(), State)):32,
       (enc_flags(ofp_port_features(), Curr)):32,
@@ -1290,7 +1296,7 @@ encode_ofp_queue_prop(#ofp_queue_prop_max_rate{rate = Rate}) ->
 encode_ofp_packet_queue(#ofp_packet_queue_v12{queue_id = QueueId, port = Port, properties = Properties}) ->
     Props = << << (pad_to(8, encode_ofp_queue_prop(P)))/binary >> || P <- Properties >>,
     Len = size(Props) + 8,
-    <<QueueId:32, (ofp_port(Port)):32, Len:16, 0:48, Props/binary>>.
+    <<QueueId:32, (enc_ofp_port(Port)):32, Len:16, 0:48, Props/binary>>.
 
 -spec encode_ofp_packet_queues([#ofp_packet_queue_v12{}]) -> binary().
 encode_ofp_packet_queues(Queues) ->
@@ -1325,7 +1331,7 @@ encode_ofs_action(Type, Data) ->
 
 -spec encode_ofs_action_output(ofp_port(), int16()) -> binary().
 encode_ofs_action_output(Port, MaxLen) ->
-    Port0 = ofp_port(Port),
+    Port0 = enc_ofp_port(Port),
     encode_ofs_action(0, <<Port0:32, MaxLen:16, 0:48>>).
 
 -spec encode_ofs_action_copy_ttl_out() -> binary().
@@ -1527,7 +1533,7 @@ encode_bucket(#ofp_bucket{weight = Weight, watch_port = WatchPort,
 			  watch_group = WatchGroup, actions = Actions}) ->
     Actions0 = encode_actions(Actions),
     Len = 16 + size(Actions0),
-    <<Len:16, Weight:16, (ofp_port(WatchPort)):32, WatchGroup:32, 0:32, Actions0/binary>>.
+    <<Len:16, Weight:16, (enc_ofp_port(WatchPort)):32, WatchGroup:32, 0:32, Actions0/binary>>.
 
 encode_buckets(List) when is_list(List) ->
     iolist_to_binary([encode_bucket(A) || A <- List]);
@@ -1650,13 +1656,17 @@ encode_ofp_match(Match) ->
 	encode_oxm_tlv({Atom, Value}) ->
 	       <<Class:16/integer, Field:7/integer, 0:1, (Length div 8):8/integer, Value:Length/Type>>).
 
+-define(ENCODE_OXM_TLV_MAP(Class, Field, Length, Type, Atom, MAP),
+	encode_oxm_tlv({Atom, Value}) ->
+	       <<Class:16/integer, Field:7/integer, 0:1, (Length div 8):8/integer, (MAP(Value)):Length/Type>>).
+
 -define(ENCODE_OXM_MASK_TLV(Class, Field, Length, Type, Atom),
 	encode_oxm_tlv({Atom, Value, Mask}) ->
 	       <<Class:16/integer, Field:7/integer, 1:1, (Length div 4):8/integer,
 		 Value:Length/Type, Mask:Length/Type>>).
 
-?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IN_PORT, 32, integer, in_port);
-?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IN_PHY_PORT, 32, integer, in_phy_port);
+?ENCODE_OXM_TLV_MAP(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IN_PORT, 32, integer, in_port, enc_ofp_port);
+?ENCODE_OXM_TLV_MAP(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_IN_PHY_PORT, 32, integer, in_phy_port, enc_ofp_port);
 ?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_METADATA, 64, bits, metadata);
 ?ENCODE_OXM_MASK_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_METADATA, 64, bits, metadata);
 ?ENCODE_OXM_TLV(?OFPXMC_OPENFLOW_BASIC, ?OFPXMT_OFB_ETH_DST, 48, bits, eth_dst);
@@ -1799,7 +1809,7 @@ encode_msg(#ofp_port_status{reason = Reason, port = Port}) ->
 encode_msg(#ofp_packet_out{buffer_id = BufferId, in_port = InPort, actions = Actions, data = Data}) ->
     BinActions = encode_actions(Actions),
     <<BufferId:32,
-      (ofp_port(InPort)):32,
+      (enc_ofp_port(InPort)):32,
       (size(BinActions)):16, 0:48,
       BinActions/binary, Data/binary>>;
 
@@ -1812,7 +1822,7 @@ encode_msg(#ofp_flow_mod_v12{cookie = Cookie, cookie_mask = CookieMask, table_id
       (ofp_flow_mod_command(Command)):8,
       IdleTimeout:16, HardTimeout:16,
       Priority:16, BufferId:32,
-      (ofp_port(OutPort)):32,
+      (enc_ofp_port(OutPort)):32,
       (ofp_group(OutGroup)):32,
       (enc_flags(ofp_flow_mod_flags(), Flags)):16, 0:16,
       (encode_ofp_match(Match))/binary,
@@ -1837,10 +1847,10 @@ encode_msg(#ofp_table_mod{table_id = TableId, config = Config}) ->
     <<TableId:8, 0:24, (enc_flags(ofp_table_config(), Config)):32>>;
 
 encode_msg(#ofp_queue_get_config_request{port = Port}) ->
-    <<(ofp_port(Port)):32>>;
+    <<(enc_ofp_port(Port)):32>>;
 
 encode_msg(#ofp_queue_get_config_reply{port = Port, queues = Queues}) ->
-    <<(ofp_port(Port)):32, 0:32,
+    <<(enc_ofp_port(Port)):32, 0:32,
       (encode_ofp_packet_queues(Queues))/binary>>;
 
 encode_msg([Head|_] = Msg)
@@ -1856,14 +1866,14 @@ encode_msg(#ofp_desc_stats_request{}) ->
 encode_msg(#ofp_flow_stats_request_v11{table_id = TableId, out_port = OutPort, out_group = OutGroup,
 				       cookie = Cookie, cookie_mask = CookieMask, match = Match}) ->
 
-    Req = <<(ofp_table(TableId)):8, 0:24, (ofp_port(OutPort)):32,
+    Req = <<(ofp_table(TableId)):8, 0:24, (enc_ofp_port(OutPort)):32,
 	    (ofp_group(OutGroup)):32, 0:32, Cookie:64, CookieMask:64, 
 	    (encode_ofp_match(Match))/binary>>,
     encode_ofp_stats_request(flow, 0, Req);
 
 encode_msg(#ofp_aggregate_stats_request_v11{table_id = TableId, out_port = OutPort, out_group = OutGroup,
 					    cookie = Cookie, cookie_mask = CookieMask, match = Match}) ->
-    Req = <<(ofp_table(TableId)):8, 0:24, (ofp_port(OutPort)):32,
+    Req = <<(ofp_table(TableId)):8, 0:24, (enc_ofp_port(OutPort)):32,
 	    (ofp_group(OutGroup)):32, 0:32, Cookie:64, CookieMask:64,
 	    (encode_ofp_match(Match))/binary>>,
     encode_ofp_stats_request(aggregate, 0, Req);
@@ -1875,11 +1885,11 @@ encode_msg(#ofp_rofl_broken_table_stats_request{}) ->
     encode_ofp_stats_request(table, 0, binary:copy(<<0:8>>, 1024));
 
 encode_msg(#ofp_port_stats_request{port_no = Port}) ->
-    Req = <<(ofp_port(Port)):32, 0:32>>,
+    Req = <<(enc_ofp_port(Port)):32, 0:32>>,
     encode_ofp_stats_request(port, 0, Req);
 
 encode_msg(#ofp_queue_stats_request{port_no = Port, queue_id = Queue}) ->
-    Req = <<(ofp_port(Port)):32, (ofp_queue(Queue)):32>>,
+    Req = <<(enc_ofp_port(Port)):32, (ofp_queue(Queue)):32>>,
     encode_ofp_stats_request(queue, 0, Req);
 
 encode_msg(#ofp_group_stats_request{group_id = GroupId}) ->
