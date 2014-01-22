@@ -1,6 +1,13 @@
 flower
 ======
 
+Changes with 0.3.2 - 20 Jan 2014
+--------------------------------
+
+* update encoding for rofl-core 0.3.2.1, xdpd 0.3.3:
+  - actions moved to experimenter extensions
+  - matches renumbered
+
 Changes with 0.3.1 - 07 Nov 2013
 --------------------------------
 
