@@ -1,6 +1,11 @@
 flower
 ======
 
+Changes with 0.3.3 - 31 Mar 2014
+--------------------------------
+
+* fix action and instruction decode
+
 Changes with 0.3.2 - 20 Jan 2014
 --------------------------------
 
