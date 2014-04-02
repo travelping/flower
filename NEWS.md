@@ -1,6 +1,11 @@
 flower
 ======
 
+Changes with 0.3.4 - xx Apr 2014
+--------------------------------
+
+* switched debbug logging to lager
+
 Changes with 0.3.3 - 31 Mar 2014
 --------------------------------
 

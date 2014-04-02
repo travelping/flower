@@ -85,7 +85,7 @@ decode_payload(Type, Pkt, Flow)
     Flow#flow{l4 = Pkt};
 
 decode_payload(Type, Pkt, Flow) ->
-    ?DEBUG("decode_payload: ~p, ~p, ~p", [Type, Pkt, Flow]),
+    lager:debug("decode_payload: ~p, ~p, ~p", [Type, Pkt, Flow]),
     Flow.
 
 decode_ip(tcp, <<Src:16/integer, Dst:16/integer, _Seq:32/integer, _Ack:32/integer,

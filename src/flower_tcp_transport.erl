@@ -95,7 +95,7 @@ handle_info(_Info, State) ->
     {noreply, State}.
 
 terminate(Reason, _State) ->
-    ?DEBUG("flower_tcp_listener terminate on ~p", [Reason]),
+    lager:debug("flower_tcp_listener terminate on ~p", [Reason]),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->

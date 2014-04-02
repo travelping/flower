@@ -270,14 +270,14 @@ init(TransportMod) ->
 %% @end
 %%--------------------------------------------------------------------
 setup({accept, Socket}, State) ->
-    ?DEBUG("got setup~n"),
+    lager:debug("got setup"),
     NewState = State#state{role = server, socket = Socket},
-    ?DEBUG("NewState: ~p~n", [NewState]),
+    lager:debug("NewState: ~p", [NewState]),
     ok = inet:setopts(Socket, [{active, once}]),
     send_request(hello, <<>>, {next_state, open, NewState, ?CONNECT_TIMEOUT});
 
 setup(timeout, State = #state{role = client, arguments = Arguments}) ->
-    ?DEBUG("connect timeout in state setup"),
+    lager:debug("connect timeout in state setup"),
     setup({connect, Arguments}, State);
 
 setup({connect, Arguments}, State = #state{transport = TransportMod}) ->
@@ -285,7 +285,7 @@ setup({connect, Arguments}, State = #state{transport = TransportMod}) ->
     case TransportMod:connect(Arguments, ?CONNECT_SETUP_TIMEOUT) of
 	{ok, Socket} ->
 	    NewState1 = NewState0#state{socket = Socket},
-	    ?DEBUG("NewState: ~p~n", [NewState1]),
+	    lager:debug("NewState: ~p", [NewState1]),
 	    ok = inet:setopts(Socket, [{active, once}]),
 	    send_request(hello, <<>>, {next_state, open, NewState1, ?CONNECT_TIMEOUT});
 	_ ->
@@ -294,7 +294,7 @@ setup({connect, Arguments}, State = #state{transport = TransportMod}) ->
 
 setup(Msg, State)
   when element(1, Msg) =:= send ->
-    ?DEBUG("ignoring send in state setup, Msg was: ~p~n", [Msg]),
+    lager:debug("ignoring send in state setup, Msg was: ~p", [Msg]),
     {next_state, setup, State}.
 
 setup(_Msg, _From, State) ->
@@ -303,26 +303,26 @@ setup(_Msg, _From, State) ->
 
 open({hello, Version, _Xid, _Msg}, State)
   when Version > ?VERSION ->
-    ?DEBUG("got hello in open"),
+    lager:debug("got hello in open"),
     %% Take our version has highest supported
     NewState = State#state{version = ?VERSION},
     send_request(features_request, <<>>, {next_state, connecting, NewState, ?REQUEST_TIMEOUT});
 
 open({hello, Version, _Xid, _Msg}, State)
   when Version == 1; Version == ?VERSION ->
-    ?DEBUG("got hello in open"),
+    lager:debug("got hello in open"),
     %% Accept their Idea of version if we support it
     NewState = State#state{version = Version},
     send_request(features_request, <<>>, {next_state, connecting, NewState, ?REQUEST_TIMEOUT});
 
 open({hello, _Version, Xid, _Msg}, State) ->
-    ?DEBUG("got hello in open"),
+    lager:debug("got hello in open"),
     Reply = #ofp_error{error = hello_failed, data = incompatible},
     send_pkt(error, Xid, Reply, {stop, normal, State});
 
 open(Msg, State)
   when element(1, Msg) =:= send ->
-    ?DEBUG("ignoring send in state open, Msg was: ~p~n", [Msg]),
+    lager:debug("ignoring send in state open, Msg was: ~p", [Msg]),
     {next_state, open, State}.
 
 open(_Msg, _From, State) ->
@@ -330,7 +330,7 @@ open(_Msg, _From, State) ->
     {reply, Reply, open, State, ?CONNECT_TIMEOUT}.
 
 connecting({features_reply, _Version, _Xid, Msg}, State) ->
-    ?DEBUG("got features_reply in connected"),
+    lager:debug("got features_reply in connected"),
     flower_dispatcher:dispatch({datapath, join}, self(), Msg),
     {next_state, connected, State#state{features = Msg}};
 
@@ -339,11 +339,11 @@ connecting({echo_request, _Version, Xid, _Msg}, State) ->
 
 connecting(Msg, State)
   when element(1, Msg) =:= send ->
-    ?DEBUG("ignoring send in state connecting, Msg was: ~p~n", [Msg]),
+    lager:debug("ignoring send in state connecting, Msg was: ~p", [Msg]),
     {next_state, connecting, State};
 
 connecting(Msg, State) ->
-    ?DEBUG("ignoring Message in state connecting, Msg was: ~p~n", [Msg]),
+    lager:debug("ignoring Message in state connecting, Msg was: ~p", [Msg]),
     {next_state, connecting, State}.
 
 connecting(_Msg, _From, State) ->
@@ -360,7 +360,7 @@ connected({timeout, _Ref, Xid}, State) ->
     end;
 
 connected({features_reply, _Version, _Xid, Msg}, State) ->
-    ?DEBUG("got features_reply in connected"),
+    lager:debug("got features_reply in connected"),
     {next_state, connected, State#state{features = Msg}};
 
 connected({echo_request, _Version, Xid, _Msg}, State) ->
@@ -453,7 +453,7 @@ connected({modify_flow, Table, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
     {next_state, connected, State};
 
 connected(Msg, State) ->
-    ?DEBUG("unhandled message: ~w", [Msg]),
+    lager:debug("unhandled message: ~w", [Msg]),
     {next_state, connected, State}.
 
 %%--------------------------------------------------------------------
@@ -556,11 +556,11 @@ handle_sync_event(_Event, _From, StateName, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_info({tcp, Socket, Data}, StateName, #state{socket = Socket} = State) ->
-    ?DEBUG(flower_tools:hexdump(Data)),
+    lager:debug(flower_tools:hexdump(Data)),
     {Msg, DataRest} = decode_of_pkt(<<(State#state.pending)/binary, Data/binary>>, State),
     State0 = inc_counter(State, recv, raw_packets),
     State1 = State0#state{pending = DataRest},
-    ?DEBUG("handle_info: decoded: ~p~nrest: ~p~n", [Msg, DataRest]),
+    lager:debug("handle_info: decoded: ~prest: ~p", [Msg, DataRest]),
 
     case Msg of
 	[] -> 
@@ -608,7 +608,7 @@ handle_info({tcp_closed, Socket}, _StateName, State) ->
 %% @end
 %%--------------------------------------------------------------------
 terminate(_Reason, StateName, State) ->
-    ?DEBUG("terminate"),
+    lager:debug("terminate"),
     case StateName of
 	connected ->
 	    flower_dispatcher:dispatch({datapath, leave}, self(), undefined);
@@ -680,6 +680,7 @@ handle_socket_error(_Socket,
 handle_socket_error(Socket,
 		    State = #state{role = client, socket = Socket}) ->
     error_logger:info_msg("Server Disconnected."),
+    lager:info("Server Disconnected."),
     flower_dispatcher:dispatch({datapath, leave}, self(), undefined),
     NewState0 = State#state{pending = <<>>, features = undefined},
     NewState1 = socket_close(NewState0),
@@ -689,6 +690,7 @@ handle_socket_error(Socket,
 handle_socket_error(Socket,
 		    State = #state{role = server, socket = Socket}) ->
     error_logger:info_msg("Client Disconnected."),
+    lager:info("Client Disconnected."),
     {stop, normal, State}.
 
 send_request(Type, Msg, NextStateInfo) ->
@@ -710,7 +712,7 @@ send_pkt(Type, Xid, Msg, NextStateInfo) ->
 	ok ->
 	    setelement(3, NextStateInfo, NewState);
 	{error, Reason} ->
-	    ?DEBUG("error - Reason: ~p~n", [Reason]),
+	    lager:debug("error - Reason: ~p, Packet: ~p", [Reason, Packet]),
 	    handle_socket_error(Socket, NewState)
     end.
 

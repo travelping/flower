@@ -102,12 +102,12 @@ handle_cast({{packet, in}, Sw, Msg}, State) ->
 		true ->
 		    %% The output port is known, so add a new flow.
 		    Match = flower_match:encode_ofp_matchflow([{nw_src_mask,32}, {nw_dst_mask,32}, tp_dst, tp_src, nw_proto, dl_type], Flow),
-		    ?DEBUG("Match: ~p~n", [Match]),
+		    lager:debug("Match: ~p", [Match]),
 
 		    flower_datapath:install_flow(Sw, Match, 0, 60, 0, Actions, Msg#ofp_packet_in.buffer_id, 0, Msg#ofp_packet_in.in_port, Msg#ofp_packet_in.data)
 	    end;
 	_ ->
-	    ?DEBUG("no match: ~p~n", [Flow])
+	    lager:debug("no match: ~p", [Flow])
     end,
     {noreply, State};
 
@@ -163,7 +163,7 @@ choose_destination(#flow{in_port = Port, dl_src = DlSrc, dl_dst = DlDst} = _Flow
 			   find_out_port(DlDst, 0, Port);
 		  true -> none
 	      end,
-    ?DEBUG("Verdict: ~p", [OutPort]),
+    lager:debug("Verdict: ~p", [OutPort]),
     OutPort.
 
 learn_mac(DlSrc, VLan, Port) ->		 
@@ -174,7 +174,7 @@ learn_mac(DlSrc, VLan, Port) ->
 	end,
     if
 	R =:= new; R =:= updated ->
-            ?DEBUG("~p: learned that ~s is on port ~w", [self(), flower_tools:format_mac(DlSrc), Port]),
+            lager:debug("~p: learned that ~s is on port ~w", [self(), flower_tools:format_mac(DlSrc), Port]),
 	    ok;
 	true ->
 	    ok
