@@ -12,7 +12,6 @@
 %% --------------------------------------------------------------------
 %% Include files
 %% --------------------------------------------------------------------
--include("flower_debug.hrl").
 -include("flower_packet.hrl").
 
 %% --------------------------------------------------------------------
@@ -1006,7 +1005,6 @@ decode_oxm_tlv(Data) ->
 decode_oxm_tlvs(<<>>, TLVs) ->
     lists:reverse(TLVs);
 decode_oxm_tlvs(Data, TLVs) ->
-    io:format("Decode TLV: ~p~n", [Data]),
     {TLV, Next} = decode_oxm_tlv(Data),
     decode_oxm_tlvs(Next, [TLV|TLVs]).
 

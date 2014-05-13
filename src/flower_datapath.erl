@@ -6,7 +6,6 @@
 %% --------------------------------------------------------------------
 %% Include files
 %% --------------------------------------------------------------------
--include("flower_debug.hrl").
 -include("flower_packet.hrl").
 -include("flower_datapath.hrl").
 
@@ -49,11 +48,7 @@
 -define(CONNECT_TIMEOUT, 30000).        %% wait 30sec for the first packet to arrive
 -define(REQUEST_TIMEOUT, 10000).        %% wait 10sec for answer
 
--ifdef(debug).
--define(FSM_OPTS,{debug,[trace]}).
--else.
--define(FSM_OPTS,).
--endif.
+-define(DEBUG_OPTS,[{install, {fun lager_sys_debug:lager_gen_fsm_trace/3, ?MODULE}}]).
 
 %%%===================================================================
 %%% API
@@ -69,7 +64,7 @@
 %% @end
 %%--------------------------------------------------------------------
 start_link(TransportMod) ->
-    gen_fsm:start_link(?MODULE, TransportMod, [?FSM_OPTS]).
+    gen_fsm:start_link(?MODULE, TransportMod, [{debug, ?DEBUG_OPTS}]).
 
 connect(TransportMod, Arguments) ->
     case flower_datapath:start_connection(TransportMod) of
@@ -560,7 +555,7 @@ handle_info({tcp, Socket, Data}, StateName, #state{socket = Socket} = State) ->
     {Msg, DataRest} = decode_of_pkt(<<(State#state.pending)/binary, Data/binary>>, State),
     State0 = inc_counter(State, recv, raw_packets),
     State1 = State0#state{pending = DataRest},
-    lager:debug("handle_info: decoded: ~prest: ~p", [Msg, DataRest]),
+    lager:debug("handle_info: decoded: ~p, rest: ~p", [Msg, DataRest]),
 
     case Msg of
 	[] -> 
