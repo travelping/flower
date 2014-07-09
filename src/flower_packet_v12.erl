@@ -532,7 +532,7 @@ ofp_error_code_type(role_request_failed, bad_role)	-> 2;
 ofp_error_code_type(_, _) -> error.
 
 ofp_capabilities() ->
-    [flow_stats, table_stats, port_stats, group_stats, reserved, ip_reasm, queue_stats, reserved, port_blocked].
+    [flow_stats, table_stats, port_stats, group_stats, reserved_flag_4, ip_reasm, queue_stats, reserved_flag_6, port_blocked].
 
 ofp_action_type() ->
     [output,		%% Output to switch port.
@@ -731,7 +731,7 @@ of_experimenter_ext({rofl, 0}) ->	rofl_none;
 of_experimenter_ext({rofl, 2}) ->	rofl_flowspace;
 of_experimenter_ext(rofl_none) ->	{rofl, 0};
 of_experimenter_ext(rofl_flowspace) ->	{rofl, 2};
-of_experimenter_ext(ExperimenterExt) when is_integer(ExperimenterExt) ->	ExperimenterExt.
+of_experimenter_ext(Ext = {Experimenter, Id}) when is_integer(Experimenter); is_integer(Id) ->	Ext.
 
 %% protocol(NwProto)
 %%   when is_atom(NwProto) ->
@@ -1244,7 +1244,7 @@ decode_stats_reply(table, Acc, <<TableId:8/integer, _Pad:7/bytes, Name:32/bytes,
   when Rest == <<>> ->
     R = #ofp_rofl_broken_table_stats_v12{
       table_id = ofp_table(TableId), name = decode_binstring(Name),
-      wildcards = Wildcards, match = Match, 
+      wildcards = Wildcards, match = Match,
       instructions = dec_flags(ofp_instruction_types(), Instructions),
       write_actions = dec_flags(ofp_action_type(), WriteActions),
       apply_actions = dec_flags(ofp_action_type(), ApplyActions),
@@ -1624,7 +1624,7 @@ encode_stats_reply_entry(#ofp_flow_stats_v11{table_id = TableId, duration = {Sec
 					     packet_count = PacketCount, byte_count = ByteCount, match = Match, instructions = Instructions}) ->
     BinMatch = encode_ofp_match(Match),
     BinInstr = encode_instructions(Instructions),
-    Length = 48 + size(Match) + size(Instructions),
+    Length = 48 + size(BinMatch) + size(BinInstr),
     <<Length:16, TableId:8, 0:8, Sec:32, NSec:32, Priority:16, IdleTimeout:16, HardTimeout:16, 0:48,
       Cookie:64, PacketCount:64, ByteCount:64, BinMatch/binary, BinInstr/binary>>;
 
