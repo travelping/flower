@@ -425,7 +425,7 @@ connected({modify_flow, Table, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
 	  buffer_id    = BufferId,
 	  out_port     = any,
 	  out_group    = any,
-	  flags	       = [],
+	  flags	       = [send_flow_rem],
 	  match        = Match,
 	  instructions = #ofp_instruction_actions{
 	    type = apply_actions,
