@@ -414,9 +414,12 @@ connected({modify_flow, _Table, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
 connected({modify_flow, Table, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
 	   Actions, BufferId, Priority, InPort, Packet}, State)
   when State#state.version == 3 ->
+    CookieMask = if Cookie /= 0 -> 16#ffffffffffffffff;
+		    true        -> 0
+		 end,
     Msg = #ofp_flow_mod_v12{
       	  cookie       = Cookie,
-	  cookie_mask  = 16#ffffffffffffffff,
+	  cookie_mask  = CookieMask,
 	  table_id     = Table,
 	  command      = ModCmd,
 	  idle_timeout = IdleTimeout,
