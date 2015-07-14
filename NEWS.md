@@ -1,6 +1,12 @@
 flower
 ======
 
+Changes with 0.3.6 - 14 Jul 2015
+--------------------------------
+
+* Set SEND_FLOW_REM flag in OF 1.2 flow_mod messages
+* set correct cookie mask in flow delete requests
+
 Changes with 0.3.5 - 14 May 2014
 --------------------------------
 
