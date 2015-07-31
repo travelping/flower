@@ -150,11 +150,18 @@ v12_ofp_table_stats_request() ->
     hexstr2bin("031200103a528eed0003000000000000").
 
 v12_ofp_table_stats_reply() ->
-    hexstr2bin("0313009000000008000300000000000000000000000000005445535400000000"
-	       "0000000000000000000000000000000000000000000000000000000000000000"
-	       "0000000000000000000000000000000000000000000000000000000000000000"
-	       "0000000000000000000000000000000000000000000000000000000000000000"
-	       "00000000000000000000000000000000").
+    hexstr2bin("0313018000082fa40001000000000000009800000000f2bc000000000000003c"
+	       "000000000000000000000000000000000000000000010ad0000000000076d0a0"
+	       "0001004c80000004000000038000060601005e0000668000080600000c9ff01e"
+	       "80000a0208008000100130800014011180001604ac1c006580001804e0000066"
+	       "80001e0207c18000200207c10000000000040018000000000000001000000001"
+	       "00800000000000000078000000000054000000000000003c0000000000000000"
+	       "0000000000000000000000000000000700000000000002760001003080000004"
+	       "0000000380000606ffffffffffff800008060024fe4f8c3180000a028863ffff"
+	       "2a0109ffff2c0101000400180000000000000010000000010080000000000000"
+	       "006000000000f2bd000000000000000000000000000000000000000000000000"
+	       "000000000003c42700000000010f2c4e000100278000060600900b29473a8000"
+	       "0a020800800014011180001804ac1c000280002002147f000001000801000000").
 
 v12_rofl_broken_table_stats_request() ->
     hexstr2bin("0312041030cdd336000300000000000000000000000000000000000000000000"
@@ -262,7 +269,7 @@ test_packet_in(_Config) ->
 	{[Msg = #ovs_msg{msg = #ofp_packet_in{}}],_} = flower_packet:decode(Sw),
 	Sw = flower_packet:encode(Msg),
 	ok.
-	
+
 test_flow_mod_add(_Config) ->
 	Sw = ofp_flow_mod_add(),
 	{[Msg = #ovs_msg{msg = #ofp_flow_mod{}}],_} = flower_packet:decode(Sw),
@@ -447,18 +454,57 @@ test_stats_req(_Config) ->
 	flower_packet:encode_msg(#ofp_port_stats_request{port_no = none}),
 	flower_packet:encode_msg(#ofp_queue_stats_request{port_no = none, queue_id = all}).
 
-test_v12(_Config) ->
-    ct:pal("P0: ~p~n", [flower_packet_v12:decode(v12_ofp_hello())]),
-    ct:pal("P1: ~p~n", [flower_packet_v12:decode(v12_ofp_features_request())]),
-    ct:pal("P2: ~p~n", [flower_packet_v12:decode(v12_ofp_features_reply())]),
-    ct:pal("P3: ~p~n", [flower_packet_v12:decode(v12_ofp_get_config_request())]),
-    ct:pal("P4: ~p~n", [flower_packet_v12:decode(v12_ofp_get_config_reply())]),
-    ct:pal("P5: ~p~n", [flower_packet_v12:decode(v12_ofp_table_stats_request())]),
-    ct:pal("P6: ~p~n", [flower_packet_v12:decode(v12_ofp_table_stats_reply())]),
-    ct:pal("P7: ~p~n", [flower_packet_v12:decode(v12_rofl_broken_table_stats_request())]),
-    ct:pal("P8: ~p~n", [flower_packet_v12:decode(v12_rofl_broken_table_stats_reply())]),
-    ct:pal("P9: ~p~n", [flower_packet_v12:decode(v12_rofl_flow_space_reg())]),
+v12_test_type(Sw, Type) ->
+    {[Msg = #ovs_msg{version = 3, type = Type, msg = M}|_],_} = flower_packet_v12:decode(Sw),
+    Sw = flower_packet_v12:encode(Msg),
     ok.
+
+check_type([], _Tag) ->
+    ok;
+check_type([M|_], Tag) ->
+    check_type(M, Tag);
+check_type(M, Tag) ->
+    case is_record(M, Tag) of
+	true -> ok;
+	_    -> ct:fail("invalid record: expected: ~p, got: ~p", [Tag, M])
+    end.
+
+v12_test_msg(Sw, Type, RecordTag) ->
+    {[Msg = #ovs_msg{version = 3, type = Type, msg = M}],_} = flower_packet_v12:decode(Sw),
+    check_type(M, RecordTag),
+    Sw = flower_packet_v12:encode(Msg),
+    ok.
+
+v12_test_msg_no_enc(Sw, Type, RecordTag) ->
+    {[Msg = #ovs_msg{version = 3, type = Type, msg = M}],_} = flower_packet_v12:decode(Sw),
+    check_type(M, RecordTag).
+
+test_v12_ofp_hello(_Config) ->
+    v12_test_type(v12_ofp_hello(), hello).
+
+test_v12_ofp_features_request(_Config) ->
+    v12_test_type(v12_ofp_features_request(), features_request).
+
+test_v12_ofp_features_reply(_Config) ->
+    v12_test_msg(v12_ofp_features_reply(), features_reply, ofp_switch_features).
+
+test_v12_ofp_get_config_request(_Config) ->
+    v12_test_type(v12_ofp_get_config_request(), get_config_request).
+
+test_v12_ofp_get_config_reply(_Config) ->
+    v12_test_msg(v12_ofp_get_config_reply(), get_config_reply, ofp_switch_config).
+
+test_v12_ofp_table_stats_request(_Config) ->
+    v12_test_msg(v12_ofp_table_stats_request(), stats_request, ofp_table_stats_request).
+
+test_v12_ofp_table_stats_reply(_Config) ->
+    v12_test_msg(v12_ofp_table_stats_reply(), stats_reply, ofp_flow_stats_v11).
+
+test_v12_rofl_broken_table_stats_request(_Config) ->
+    v12_test_msg(v12_rofl_broken_table_stats_request(), stats_request, ofp_rofl_broken_table_stats_request).
+
+test_v12_rofl_broken_table_stats_reply(_Config) ->
+    v12_test_msg_no_enc(v12_rofl_broken_table_stats_reply(), stats_reply, ofp_rofl_broken_table_stats_v12).
 
 test_v12_rofl_flow_space_reg(_Config) ->
     Sw = v12_rofl_flow_space_reg(),
@@ -466,17 +512,31 @@ test_v12_rofl_flow_space_reg(_Config) ->
     Sw = flower_packet_v12:encode(Msg),
     ok.
 
-all() -> 
-	[test_hello_request, test_echo_request, test_echo_reply,
-	 test_switch_features_request, test_switch_features_reply,
-	 test_set_config, test_flow_mod_add, test_flow_removed,
-	 test_packet_in, test_packet_out,
-	 test_port_status_cfg_down, test_port_status_lnk_down,
-	 test_port_status_lnk_up,
-	 test_flow_mod,
-	 test_nx_flow_mod, test_nxst_flow_stats_request, test_nxst_flow_stats,
-	 test_stats_req, test_v12,
-	 test_v12_rofl_flow_space_reg].
+all() ->
+    [{group, 'v1.0'},
+     {group, 'v1.2'}].
+
+groups() ->
+    [{'v1.0', [test_hello_request, test_echo_request, test_echo_reply,
+	       test_switch_features_request, test_switch_features_reply,
+	       test_set_config, test_flow_mod_add, test_flow_removed,
+	       test_packet_in, test_packet_out,
+	       test_port_status_cfg_down, test_port_status_lnk_down,
+	       test_port_status_lnk_up,
+	       test_flow_mod,
+	       test_nx_flow_mod, test_nxst_flow_stats_request, test_nxst_flow_stats,
+	       test_stats_req]},
+     {'v1.2', [test_v12_ofp_hello,
+	       test_v12_ofp_features_request,
+	       test_v12_ofp_features_reply,
+	       test_v12_ofp_get_config_request,
+	       test_v12_ofp_get_config_reply,
+	       test_v12_ofp_table_stats_request,
+	       test_v12_ofp_table_stats_reply,
+	       test_v12_rofl_broken_table_stats_request,
+	       test_v12_rofl_broken_table_stats_reply
+	       %% test_v12_rofl_flow_space_reg   -- old version, no longer supported
+	      ]}].
 
 init_per_suite(Config) ->
 	Config.

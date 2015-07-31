@@ -1,18 +1,37 @@
--module(flower_mac_learning).
+%% Copyright 2010-2012, Travelping GmbH <info@travelping.com>
+
+%% Permission is hereby granted, free of charge, to any person obtaining a
+%% copy of this software and associated documentation files (the "Software"),
+%% to deal in the Software without restriction, including without limitation
+%% the rights to use, copy, modify, merge, publish, distribute, sublicense,
+%% and/or sell copies of the Software, and to permit persons to whom the
+%% Software is furnished to do so, subject to the following conditions:
+
+%% The above copyright notice and this permission notice shall be included in
+%% all copies or substantial portions of the Software.
+
+%% THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+%% IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+%% FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+%% AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+%% LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+%% FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+%% DEALINGS IN THE SOFTWARE.
+
+-module(flower_mac_learning2).
 
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, insert/2, insert/3, lookup/1, lookup/2,
-	 expire/0, may_learn/1, may_learn/2, eth_addr_is_reserved/1,
+-export([start_link/1, start_link/2, insert/3, insert/4, lookup/2, lookup/3,
+	 expire/1, may_learn/1, may_learn/2, eth_addr_is_reserved/1,
 	 is_broadcast/1,
-	 dump/0]).
+	 dump/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
--define(SERVER, ?MODULE). 
 -define(MAC_ENTRY_IDLE_TIME, 60).
 
 -record(state, {
@@ -31,26 +50,31 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link() ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+start_link(Options) when is_list(Options) ->
+    gen_server:start_link(?MODULE, [], Options);
+start_link(ServerName) ->
+    gen_server:start_link(ServerName, ?MODULE, [], []).
 
-insert(MAC, Port) ->
-    insert(MAC, 0, Port).
+start_link(ServerName, Options) ->
+    gen_server:start_link(ServerName, ?MODULE, [], Options).
 
-insert(MAC, VLan, Port) ->
-    gen_server:call(?SERVER, {insert, MAC, VLan, Port}).
+insert(Server, MAC, Port) ->
+    insert(Server, MAC, 0, Port).
 
-lookup(MAC) ->
-    lookup(MAC, 0).
+insert(Server, MAC, VLan, Port) ->
+    gen_server:call(Server, {insert, MAC, VLan, Port}).
 
-lookup(MAC, VLan) ->
-    gen_server:call(?SERVER, {lookup, MAC, VLan}).
+lookup(Server, MAC) ->
+    lookup(Server, MAC, 0).
 
-dump() ->
-    gen_server:call(?SERVER, {dump}).
+lookup(Server, MAC, VLan) ->
+    gen_server:call(Server, {lookup, MAC, VLan}).
 
-expire() ->
-    gen_server:cast(?SERVER, expire).
+dump(Server) ->
+    gen_server:call(Server, {dump}).
+
+expire(Server) ->
+    gen_server:cast(Server, expire).
 
 may_learn(<<_:7, BCast:1, _/binary>> = _MAC) ->
     (BCast =/= 1).
@@ -102,7 +126,7 @@ eth_addr_is_reserved(_Addr) ->
 init([]) ->
     process_flag(trap_exit, true),
     LRU = lrulist:new(),
-    {ok, Timer} = timer:apply_interval(1000, ?MODULE, expire, []),
+    {ok, Timer} = timer:apply_interval(1000, ?MODULE, expire, [self()]),
     {ok, #state{timer = Timer, lru = LRU}}.
 
 %%--------------------------------------------------------------------

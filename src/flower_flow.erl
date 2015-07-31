@@ -6,7 +6,6 @@
 %% --------------------------------------------------------------------
 %% Include files
 %% --------------------------------------------------------------------
--include("flower_debug.hrl").
 -include("flower_packet.hrl").
 -include("flower_flow.hrl").
 
@@ -40,6 +39,9 @@ decode_ethertype(EtherType, PayLoad, Flow) when EtherType >= ?ETH_TYPE_MIN ->
 %% snap.snap_org ==  SNAP_ORG_ETHERNET,
 decode_ethertype(_EtherType, <<?LLC_DSAP_SNAP:8/integer, ?LLC_SSAP_SNAP:8/integer, ?LLC_CNTL_SNAP:8/integer, ?SNAP_ORG_ETHERNET, SnapType:16/integer, PayLoad/binary>>, Flow) ->
     decode_payload(flower_packet:eth_type(SnapType), PayLoad, Flow#flow{dl_type = flower_packet:eth_type(SnapType), l3 = PayLoad});
+
+decode_ethertype(_EtherType, <<?LLC_DSAP_BPDU:8/integer, ?LLC_SSAP_BPDU:8/integer, ?LLC_CNTL_BPDU:8/integer, PayLoad/binary>>, Flow) ->
+    decode_payload(bpdu, PayLoad, Flow#flow{dl_type = bpdu, l3 = PayLoad});
 
 decode_ethertype(_EtherType, PayLoad, Flow) ->
     decode_payload(none, PayLoad, Flow#flow{dl_type = none, l3 = PayLoad}).
@@ -82,7 +84,7 @@ decode_payload(Type, Pkt, Flow)
     Flow#flow{l4 = Pkt};
 
 decode_payload(Type, Pkt, Flow) ->
-    ?DEBUG("decode_payload: ~p, ~p, ~p", [Type, Pkt, Flow]),
+    lager:debug("decode_payload: ~p, ~p, ~p", [Type, Pkt, Flow]),
     Flow.
 
 decode_ip(tcp, <<Src:16/integer, Dst:16/integer, _Seq:32/integer, _Ack:32/integer,

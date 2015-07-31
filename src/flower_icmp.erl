@@ -82,24 +82,6 @@ op({16, 0})	-> info_reply;
 op({17, 0})	-> address;
 op({18, 0})	-> addressreply.
 
-ip_csum(<<>>, CSum) ->
-    CSum;
-ip_csum(<<Head:8/integer>>, CSum) ->
-    CSum + Head * 256;
-ip_csum(<<Head:16/integer, Tail/binary>>, CSum) ->
-    ip_csum(Tail, CSum + Head).
-
-ip_csum(Bin) ->
-    CSum = ip_csum(Bin, 0),
-    ((CSum band 16#ffff) + (CSum bsr 16)) bxor 16#ffff.
-
--spec ether_hdr(binary(), binary(), vlan_tci(), integer()) -> binary().
-ether_hdr(DlDst, DlSrc, undefined, EthType) ->
-    <<DlDst:?ETH_ADDR_LEN/bytes-unit:8, DlSrc:?ETH_ADDR_LEN/bytes-unit:8, EthType:16>>;
-ether_hdr(DlDst, DlSrc, {PCP, VID}, EthType) ->
-    <<DlDst:?ETH_ADDR_LEN/bytes-unit:8, DlSrc:?ETH_ADDR_LEN/bytes-unit:8, 16#8100:16, PCP:3, 0:1, VID:12, EthType:16>>.
-
-
 make_icmp(Op, TCI, DlDst, DlSrc, NwSrc, NwDst, IPHdr) ->
     make_icmp(Op, TCI, DlDst, DlSrc, NwSrc, NwDst, IPHdr, 0, 0).
 
@@ -110,17 +92,17 @@ make_icmp(Op, TCI, DlDst, DlSrc, NwSrc, NwDst, IPHdr) ->
 %% the IPHdr should be the original IP packet header.
 make_icmp(Op, TCI, DlDst, DlSrc, NwSrc, NwDst, IPHdr, IcmpId, IcmpSeqNo) ->
     {Type, Code} = op(Op),
-    Ether = ether_hdr(DlDst, DlSrc, TCI, flower_packet:eth_type(ip)),
+    Ether = flower_tools:ether_hdr(DlDst, DlSrc, TCI, flower_packet:eth_type(ip)),
 
-    ICMPCSum = ip_csum(<<Type:8, Code:8, 0:16, IcmpId:16, IcmpSeqNo:16, IPHdr/binary>>),
+    ICMPCSum = flower_tools:ip_csum(<<Type:8, Code:8, 0:16, IcmpId:16, IcmpSeqNo:16, IPHdr/binary>>),
     ICMP = <<Type:8, Code:8, ICMPCSum:16, IcmpId:16, IcmpSeqNo:16, IPHdr/binary>>,
 
     TotLen = 20 + size(ICMP),
     Id = 0,
     Proto = gen_socket:protocol(icmp),
-    HdrCSum = ip_csum(<<4:4, 5:4, 0:8, TotLen:16,
-			Id:16, 0:16, 64:8, Proto:8,
-			0:16/integer, NwSrc:4/bytes-unit:8, NwDst:4/bytes-unit:8>>),
+    HdrCSum = flower_tools:ip_csum(<<4:4, 5:4, 0:8, TotLen:16,
+				     Id:16, 0:16, 64:8, Proto:8,
+				     0:16/integer, NwSrc:4/bytes-unit:8, NwDst:4/bytes-unit:8>>),
     IP = <<4:4, 5:4, 0:8, TotLen:16,
 	   Id:16, 0:16, 64:8, Proto:8,
 	   HdrCSum:16/integer, NwSrc:4/bytes-unit:8, NwDst:4/bytes-unit:8>>,

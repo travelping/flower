@@ -27,7 +27,6 @@
 %% --------------------------------------------------------------------
 %% Include files
 %% --------------------------------------------------------------------
--include("flower_debug.hrl").
 -include("flower_packet.hrl").
 
 %% --------------------------------------------------------------------
@@ -55,7 +54,7 @@ decode(<<Version:8/integer, Type:8/integer, Length:16/integer, Xid:32/integer,
     <<_Hdr:8/bytes, Msg:MsgLen/bytes, Rest/binary>> = Data,
     MType = ofpt(Type),
     M = decode_msg(MType, Msg),
-    ?DEBUG("decode got: ~p~n", [M]),
+    lager:debug("decode got: ~p", [M]),
     decode(Rest, [#ovs_msg{version = Version, type = MType, xid = Xid, msg = M}|Acc]);
 
 decode(Rest, Acc) ->
@@ -65,9 +64,9 @@ encode(#ovs_msg{version = Version, type = Type, xid = Xid, msg = Msg}) ->
     Mtype = ofpt(Type),
     Data = encode_msg(Msg),
     Length = size(Data) + 8,
-    ?DEBUG("~p ~p ~p ~p ~p~n", [Version, Mtype, Length, Xid, Msg]),
+    lager:debug("~p ~p ~p ~p ~p", [Version, Mtype, Length, Xid, Msg]),
     R = <<Version:8, Mtype:8, Length:16, Xid:32, Data/binary>>,
-    ?DEBUG("Send: ~p~n", [R]),
+    lager:debug("Send: ~p", [R]),
     R;
 
 encode(Msg) when is_list(Msg) ->
@@ -474,7 +473,7 @@ decode_msg(vendor, << Vendor:32/integer, Cmd:32/integer, Data/binary >>) ->
 
 decode_msg(features_reply, <<DataPathId:64/integer, NBuffers:32/integer, NTables:8/integer, Pad:3/bytes,
 			     Capabilities:32/integer, Actions:32/integer, Ports/binary>>) ->
-    ?DEBUG("DataPathId: ~p, NBuffers: ~p, NTables: ~p, Pad: ~p, Capabilities: ~p, Actions: ~p, Ports: ~p~n",
+    lager:debug("DataPathId: ~p, NBuffers: ~p, NTables: ~p, Pad: ~p, Capabilities: ~p, Actions: ~p, Ports: ~p",
 	   [DataPathId, NBuffers, NTables, Pad, Capabilities, Actions, Ports]),
     #ofp_switch_features{datapath_id = DataPathId,
 			 n_buffers = NBuffers,
@@ -557,7 +556,7 @@ decode_ofp_match(<<Wildcards:32/integer, InPort:16/integer,
 		   _Pad1:1/bytes, 
 		   DlType:16/integer, NwTos:8/integer, NwProto:8/integer, _Pad2:2/bytes,
 		   NwSrc:4/bytes, NwDst:4/bytes, TpSrc:16/integer, TpDst:16/integer>>) ->
-    ?DEBUG("DlType: ~w, NwTos: ~w", [DlType, NwTos]),
+    lager:debug("DlType: ~w, NwTos: ~w", [DlType, NwTos]),
     #ofp_match{wildcards = Wildcards, in_port = ofp_port(InPort),
 	       dl_src = DlSrc, dl_dst = DlDst, dl_vlan = DlVlan, dl_vlan_pcp = DlVlanPcp, dl_type = eth_type(DlType),
 	       nw_tos = NwTos, nw_proto = protocol(NwProto), nw_src = NwSrc, nw_dst = NwDst,

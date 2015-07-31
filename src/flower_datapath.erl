@@ -6,7 +6,6 @@
 %% --------------------------------------------------------------------
 %% Include files
 %% --------------------------------------------------------------------
--include("flower_debug.hrl").
 -include("flower_packet.hrl").
 -include("flower_datapath.hrl").
 
@@ -18,9 +17,12 @@
 -export([init/1, handle_event/3,
 	 handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
 -export([setup/2, setup/3, open/2, open/3, connecting/2, connecting/3, connected/2, connected/3]).
--export([install_flow/10, send_packet/4, send_buffer/4, send_packet/5, portinfo/2,
-         remove_flow/10, remove_all_flows/1, modify_flow/10, modify_flow/11]).
--export([counters/0, counters/1, features/1, features_all/0]).
+-export([send_packet/4, send_buffer/4, send_packet/5, portinfo/2,
+	 install_flow/10, install_flow/11,
+	 modify_flow/10, modify_flow/11,
+         remove_flow/10, remove_flow/11,
+	 remove_all_flows/1, remove_all_flows/2]).
+-export([counters/0, counters/1, features/1, features_all/0, version/1]).
 
 -define(SERVER, ?MODULE).
 -define(VERSION, 3).
@@ -46,11 +48,7 @@
 -define(CONNECT_TIMEOUT, 30000).        %% wait 30sec for the first packet to arrive
 -define(REQUEST_TIMEOUT, 10000).        %% wait 10sec for answer
 
--ifdef(debug).
--define(FSM_OPTS,{debug,[trace]}).
--else.
--define(FSM_OPTS,).
--endif.
+-define(DEBUG_OPTS,[{install, {fun lager_sys_debug:lager_gen_fsm_trace/3, ?MODULE}}]).
 
 %%%===================================================================
 %%% API
@@ -66,7 +64,7 @@
 %% @end
 %%--------------------------------------------------------------------
 start_link(TransportMod) ->
-    gen_fsm:start_link(?MODULE, TransportMod, [?FSM_OPTS]).
+    gen_fsm:start_link(?MODULE, TransportMod, [{debug, ?DEBUG_OPTS}]).
 
 connect(TransportMod, Arguments) ->
     case flower_datapath:start_connection(TransportMod) of
@@ -99,6 +97,9 @@ counters() ->
 counters(Sw) ->
     gen_fsm:sync_send_all_state_event(Sw, counters).
 
+version(Sw) ->
+    gen_fsm:sync_send_all_state_event(Sw, version).
+
 features(Sw) ->
     gen_fsm:sync_send_event(Sw, features, 2000).
 
@@ -124,45 +125,52 @@ features_all() ->
 %%--------------------------------------------------------------------
 install_flow(Sw, Match, Cookie, IdleTimeout, HardTimeout,
 	     Actions, BufferId, Priority, InPort, Packet) ->
-    modify_flow(Sw, Match, Cookie, add, IdleTimeout, HardTimeout,
+    modify_flow(Sw, 0, Match, Cookie, add, IdleTimeout, HardTimeout,
+                Actions, BufferId, Priority, InPort, Packet).
+
+install_flow(Sw, Table, Match, Cookie, IdleTimeout, HardTimeout,
+	     Actions, BufferId, Priority, InPort, Packet) ->
+    modify_flow(Sw, Table, Match, Cookie, add, IdleTimeout, HardTimeout,
                 Actions, BufferId, Priority, InPort, Packet).
 
 remove_all_flows(Sw) ->
     remove_flow(Sw, flower_match:encode_ofp_match([]),
                 0, 0, 0, [], ?OFP_NO_BUFFER, 0, 0, <<>>).
 
+remove_all_flows(Sw, Table) ->
+    remove_flow(Sw, Table, flower_match:encode_ofp_match([]),
+                0, 0, 0, [], ?OFP_NO_BUFFER, 0, 0, <<>>).
+
 remove_flow(Sw, Match, Cookie, IdleTimeout, HardTimeout,
 	     Actions, BufferId, Priority, InPort, Packet) ->
-    modify_flow(Sw, Match, Cookie, delete, IdleTimeout, HardTimeout,
+    modify_flow(Sw, 0, Match, Cookie, delete, IdleTimeout, HardTimeout,
+                Actions, BufferId, Priority, InPort, Packet).
+
+remove_flow(Sw, Table, Match, Cookie, IdleTimeout, HardTimeout,
+	     Actions, BufferId, Priority, InPort, Packet) ->
+    modify_flow(Sw, Table, Match, Cookie, delete, IdleTimeout, HardTimeout,
                 Actions, BufferId, Priority, InPort, Packet).
 
 modify_flow(Sw, Match, Cookie, IdleTimeout, HardTimeout,
 	     Actions, BufferId, Priority, InPort, Packet) ->
-    modify_flow(Sw, Match, Cookie, modify, IdleTimeout, HardTimeout,
+    modify_flow(Sw, 0, Match, Cookie, modify, IdleTimeout, HardTimeout,
                 Actions, BufferId, Priority, InPort, Packet).
+
+modify_flow(Sw, Table, Match, Cookie, IdleTimeout, HardTimeout,
+	     Actions, BufferId, Priority, InPort, Packet)
+  when is_integer(Table)  ->
+    modify_flow(Sw, Table, Match, Cookie, modify, IdleTimeout, HardTimeout,
+                Actions, BufferId, Priority, InPort, Packet);
 
 modify_flow(Sw, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
             Actions, BufferId, Priority, InPort, Packet) ->
-    MatchBin = flower_packet:encode_match(Match),
-    ActionsBin = flower_packet:encode_actions(Actions),
-    PktOut = flower_packet:encode_ofp_flow_mod(MatchBin, Cookie, ModCmd,
-                                               IdleTimeout, HardTimeout,
-                                               Priority, BufferId,
-                                               none, 1, ActionsBin),
+    modify_flow(Sw, 0, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
+		Actions, BufferId, Priority, InPort, Packet).
 
-    %% apply Actions automatically for buffered packets
-    %% (BufferId /= ?OFP_NO_BUFFER)
-    send(Sw, flow_mod, PktOut),
-    if
-	BufferId == ?OFP_NO_BUFFER,
-	Packet /= none ->
-            %% only explicitly send unbuffered packets
-	    send_packet(Sw, Packet, Actions, InPort);
-	true ->
-	    ok
-    end,
-    flower_dispatcher:dispatch({flow, mod}, Sw, Match),
-    ok.
+modify_flow(Sw, Table, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
+            Actions, BufferId, Priority, InPort, Packet) ->
+    gen_fsm:send_event(Sw, {modify_flow, Table, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
+				 Actions, BufferId, Priority, InPort, Packet}).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -257,14 +265,14 @@ init(TransportMod) ->
 %% @end
 %%--------------------------------------------------------------------
 setup({accept, Socket}, State) ->
-    ?DEBUG("got setup~n"),
+    lager:debug("got setup"),
     NewState = State#state{role = server, socket = Socket},
-    ?DEBUG("NewState: ~p~n", [NewState]),
+    lager:debug("NewState: ~p", [NewState]),
     ok = inet:setopts(Socket, [{active, once}]),
     send_request(hello, <<>>, {next_state, open, NewState, ?CONNECT_TIMEOUT});
 
 setup(timeout, State = #state{role = client, arguments = Arguments}) ->
-    ?DEBUG("connect timeout in state setup"),
+    lager:debug("connect timeout in state setup"),
     setup({connect, Arguments}, State);
 
 setup({connect, Arguments}, State = #state{transport = TransportMod}) ->
@@ -272,7 +280,7 @@ setup({connect, Arguments}, State = #state{transport = TransportMod}) ->
     case TransportMod:connect(Arguments, ?CONNECT_SETUP_TIMEOUT) of
 	{ok, Socket} ->
 	    NewState1 = NewState0#state{socket = Socket},
-	    ?DEBUG("NewState: ~p~n", [NewState1]),
+	    lager:debug("NewState: ~p", [NewState1]),
 	    ok = inet:setopts(Socket, [{active, once}]),
 	    send_request(hello, <<>>, {next_state, open, NewState1, ?CONNECT_TIMEOUT});
 	_ ->
@@ -281,28 +289,35 @@ setup({connect, Arguments}, State = #state{transport = TransportMod}) ->
 
 setup(Msg, State)
   when element(1, Msg) =:= send ->
-    ?DEBUG("ignoring send in state setup, Msg was: ~p~n", [Msg]),
+    lager:debug("ignoring send in state setup, Msg was: ~p", [Msg]),
     {next_state, setup, State}.
 
 setup(_Msg, _From, State) ->
     Reply = {error, not_connected},
     {reply, Reply, setup, State, ?RECONNECT_TIMEOUT}.
 
-open({hello, Version, Xid, _Msg}, State) 
+open({hello, Version, _Xid, _Msg}, State)
   when Version > ?VERSION ->
-    ?DEBUG("got hello in open"),
-    Reply = #ofp_error{error = hello_failed, data = incompatible},
-    send_pkt(error, Xid, Reply, {stop, normal, State});
+    lager:debug("got hello in open"),
+    %% Take our version has highest supported
+    NewState = State#state{version = ?VERSION},
+    send_request(features_request, <<>>, {next_state, connecting, NewState, ?REQUEST_TIMEOUT});
 
-open({hello, Version, _Xid, _Msg}, State) ->
-    ?DEBUG("got hello in open"),
+open({hello, Version, _Xid, _Msg}, State)
+  when Version == 1; Version == ?VERSION ->
+    lager:debug("got hello in open"),
     %% Accept their Idea of version if we support it
     NewState = State#state{version = Version},
     send_request(features_request, <<>>, {next_state, connecting, NewState, ?REQUEST_TIMEOUT});
 
+open({hello, _Version, Xid, _Msg}, State) ->
+    lager:debug("got hello in open"),
+    Reply = #ofp_error{error = hello_failed, data = incompatible},
+    send_pkt(error, Xid, Reply, {stop, normal, State});
+
 open(Msg, State)
   when element(1, Msg) =:= send ->
-    ?DEBUG("ignoring send in state open, Msg was: ~p~n", [Msg]),
+    lager:debug("ignoring send in state open, Msg was: ~p", [Msg]),
     {next_state, open, State}.
 
 open(_Msg, _From, State) ->
@@ -310,7 +325,7 @@ open(_Msg, _From, State) ->
     {reply, Reply, open, State, ?CONNECT_TIMEOUT}.
 
 connecting({features_reply, _Version, _Xid, Msg}, State) ->
-    ?DEBUG("got features_reply in connected"),
+    lager:debug("got features_reply in connected"),
     flower_dispatcher:dispatch({datapath, join}, self(), Msg),
     {next_state, connected, State#state{features = Msg}};
 
@@ -319,7 +334,11 @@ connecting({echo_request, _Version, Xid, _Msg}, State) ->
 
 connecting(Msg, State)
   when element(1, Msg) =:= send ->
-    ?DEBUG("ignoring send in state connecting, Msg was: ~p~n", [Msg]),
+    lager:debug("ignoring send in state connecting, Msg was: ~p", [Msg]),
+    {next_state, connecting, State};
+
+connecting(Msg, State) ->
+    lager:debug("ignoring Message in state connecting, Msg was: ~p", [Msg]),
     {next_state, connecting, State}.
 
 connecting(_Msg, _From, State) ->
@@ -336,7 +355,7 @@ connected({timeout, _Ref, Xid}, State) ->
     end;
 
 connected({features_reply, _Version, _Xid, Msg}, State) ->
-    ?DEBUG("got features_reply in connected"),
+    lager:debug("got features_reply in connected"),
     {next_state, connected, State#state{features = Msg}};
 
 connected({echo_request, _Version, Xid, _Msg}, State) ->
@@ -370,8 +389,69 @@ connected({send, Type, Msg}, State) ->
 connected({send, Type, Xid, Msg}, State) ->
     send_pkt(Type, Xid, Msg, {next_state, connected, State});
 
+connected({modify_flow, _Table, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
+	   Actions, BufferId, Priority, InPort, Packet}, State)
+  when State#state.version == 1 ->
+    MatchBin = flower_packet:encode_match(Match),
+    ActionsBin = flower_packet:encode_actions(Actions),
+    PktOut = flower_packet:encode_ofp_flow_mod(MatchBin, Cookie, ModCmd,
+                                               IdleTimeout, HardTimeout,
+                                               Priority, BufferId,
+                                               none, 1, ActionsBin),
+
+    send(self(), flow_mod, PktOut),
+    if
+	BufferId == ?OFP_NO_BUFFER,
+	Packet /= none ->
+            %% only explicitly send unbuffered packets
+	    send_packet(self(), Packet, Actions, InPort);
+	true ->
+	    ok
+    end,
+    flower_dispatcher:dispatch({flow, mod}, self(), Match),
+    {next_state, connected, State};
+
+connected({modify_flow, Table, Match, Cookie, ModCmd, IdleTimeout, HardTimeout,
+	   Actions, BufferId, Priority, InPort, Packet}, State)
+  when State#state.version == 3 ->
+    CookieMask = if Cookie /= 0 -> 16#ffffffffffffffff;
+		    true        -> 0
+		 end,
+    Msg = #ofp_flow_mod_v12{
+      	  cookie       = Cookie,
+	  cookie_mask  = CookieMask,
+	  table_id     = Table,
+	  command      = ModCmd,
+	  idle_timeout = IdleTimeout,
+	  hard_timeout = HardTimeout,
+	  priority     = Priority,
+	  buffer_id    = BufferId,
+	  out_port     = any,
+	  out_group    = any,
+	  flags	       = [send_flow_rem],
+	  match        = Match,
+	  instructions = #ofp_instruction_actions{
+	    type = apply_actions,
+	    actions = Actions
+	   }
+     },
+
+    %% apply Actions automatically for buffered packets
+    %% (BufferId /= ?OFP_NO_BUFFER)
+    send(self(), flow_mod, Msg),
+    if
+	BufferId == ?OFP_NO_BUFFER,
+	Packet /= none ->
+            %% only explicitly send unbuffered packets
+	    send_packet(self(), Packet, Actions, InPort);
+	true ->
+	    ok
+    end,
+    flower_dispatcher:dispatch({flow, mod}, self(), Match),
+    {next_state, connected, State};
+
 connected(Msg, State) ->
-    ?DEBUG("unhandled message: ~w", [Msg]),
+    lager:debug("unhandled message: ~w", [Msg]),
     {next_state, connected, State}.
 
 %%--------------------------------------------------------------------
@@ -397,8 +477,12 @@ connected(features, _From, #state{features = Features} = State) ->
     Reply = Features,
     {reply, Reply, connected, State};
 
-connected({portinfo, Port}, _From, #state{features = Features} = State) ->
+connected({portinfo, Port}, _From, #state{features = Features} = State)
+  when is_integer(Port); is_atom(Port) ->
     Reply = lists:keyfind(Port, #ofp_phy_port.port_no, Features#ofp_switch_features.ports),
+    {reply, Reply, connected, State};
+connected({portinfo, Port}, _From, #state{features = Features} = State) when is_binary(Port) ->
+    Reply = lists:keyfind(Port, #ofp_phy_port.name, Features#ofp_switch_features.ports),
     {reply, Reply, connected, State};
 
 connected({stats_request, Type, Msg, Timeout}, From, State) ->
@@ -449,6 +533,9 @@ handle_event(_Event, StateName, State) ->
 handle_sync_event(counters, _From, StateName, State = #state{counters = Counters}) ->
     {reply, Counters, StateName, State};
 
+handle_sync_event(version, _From, StateName, State = #state{version = Version}) ->
+    {reply, Version, StateName, State};
+
 handle_sync_event(_Event, _From, StateName, State) ->
     Reply = ok,
     {reply, Reply, StateName, State}.
@@ -467,11 +554,11 @@ handle_sync_event(_Event, _From, StateName, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_info({tcp, Socket, Data}, StateName, #state{socket = Socket} = State) ->
-    ?DEBUG(flower_tools:hexdump(Data)),
+    lager:debug(flower_tools:hexdump(Data)),
     {Msg, DataRest} = decode_of_pkt(<<(State#state.pending)/binary, Data/binary>>, State),
     State0 = inc_counter(State, recv, raw_packets),
     State1 = State0#state{pending = DataRest},
-    ?DEBUG("handle_info: decoded: ~p~nrest: ~p~n", [Msg, DataRest]),
+    lager:debug("handle_info: decoded: ~p, rest: ~p", [Msg, DataRest]),
 
     case Msg of
 	[] -> 
@@ -519,7 +606,7 @@ handle_info({tcp_closed, Socket}, _StateName, State) ->
 %% @end
 %%--------------------------------------------------------------------
 terminate(_Reason, StateName, State) ->
-    ?DEBUG("terminate"),
+    lager:debug("terminate"),
     case StateName of
 	connected ->
 	    flower_dispatcher:dispatch({datapath, leave}, self(), undefined);
@@ -591,6 +678,7 @@ handle_socket_error(_Socket,
 handle_socket_error(Socket,
 		    State = #state{role = client, socket = Socket}) ->
     error_logger:info_msg("Server Disconnected."),
+    lager:info("Server Disconnected."),
     flower_dispatcher:dispatch({datapath, leave}, self(), undefined),
     NewState0 = State#state{pending = <<>>, features = undefined},
     NewState1 = socket_close(NewState0),
@@ -600,6 +688,7 @@ handle_socket_error(Socket,
 handle_socket_error(Socket,
 		    State = #state{role = server, socket = Socket}) ->
     error_logger:info_msg("Client Disconnected."),
+    lager:info("Client Disconnected."),
     {stop, normal, State}.
 
 send_request(Type, Msg, NextStateInfo) ->
@@ -621,7 +710,7 @@ send_pkt(Type, Xid, Msg, NextStateInfo) ->
 	ok ->
 	    setelement(3, NextStateInfo, NewState);
 	{error, Reason} ->
-	    ?DEBUG("error - Reason: ~p~n", [Reason]),
+	    lager:debug("error - Reason: ~p, Packet: ~p", [Reason, Packet]),
 	    handle_socket_error(Socket, NewState)
     end.
 

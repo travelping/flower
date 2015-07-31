@@ -358,6 +358,18 @@
 %% Decrement IP TTL.
 -record(ofp_action_dec_nw_ttl, {}).
 
+%% Push a CAPWAP transport header, including all preceding frames.
+-record(ofp_action_push_capwap, {}).
+
+%% Pop the CAPWAP transport header, including all preceding frames.
+-record(ofp_action_pop_capwap, {}).
+
+%% Push a IEEE 802.11 Data Header
+-record(ofp_action_push_ieee80211, {}).
+
+%% Pop a IEEE 802.11 Data Header
+-record(ofp_action_pop_ieee80211, {}).
+
 %% Set a header field using OXM TLV format.
 -record(ofp_action_set_field, {
 	  tlv = undefined		:: oxm_tlv()		%% exactly one TLV
@@ -566,7 +578,7 @@
 %% Send packet (controller -> datapath).
 -record(ofp_packet_out, {
 	  buffer_id = ?OFP_NO_BUFFER	:: non_neg_integer(),	%% ID assigned by datapath (-1 if none).
-	  in_port = none	:: ofp_port(),			%% Packet's input port
+	  in_port = controller		:: ofp_port(),			%% Packet's input port
 	  actions = []		:: ofp_actions(),		%% Actions.
 	  data = <<>>		:: binary()			%% Packet data.
 }).

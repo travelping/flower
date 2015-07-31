@@ -1,8 +1,6 @@
 -module(flower_tcp_transport).
 -behaviour(gen_listener_tcp).
 
--include("flower_debug.hrl").
-
 %% API
 -export([listen/2, connect/3, shutdown/2]).
 
@@ -30,6 +28,8 @@
 			  {nodelay,      true},
 			  {packet,       raw},
 			  {reuseaddr,    true}]).
+
+-define(DEBUG_OPTS,[{install, {fun lager_sys_debug:lager_gen_fsm_trace/3, ?MODULE}}]).
 
 %%%===================================================================
 %%% API
@@ -69,7 +69,7 @@ send(Socket, Packet) ->
 %%%===================================================================
 
 start_link(Port, Options) ->
-    gen_listener_tcp:start_link({local, ?MODULE}, ?MODULE, {Port, Options}, [{debug,[trace]}]).
+    gen_listener_tcp:start_link({local, ?MODULE}, ?MODULE, {Port, Options}, [{debug, ?DEBUG_OPTS}]).
 
 init({Port, Options}) ->
     {ok, {Port, lists:merge(lists:sort(Options), lists:sort(?TCP_SERVER_OPTS))}, nil}.
@@ -95,7 +95,7 @@ handle_info(_Info, State) ->
     {noreply, State}.
 
 terminate(Reason, _State) ->
-    ?DEBUG("flower_tcp_listener terminate on ~p", [Reason]),
+    lager:debug("flower_tcp_listener terminate on ~p", [Reason]),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
