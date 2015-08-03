@@ -1203,7 +1203,7 @@ encode_ofp_group_mod(Command, Type, GroupId, Buckets) ->
     Type0 = ofp_group_type(Type),
     <<Cmd:16, Type0:8, 0:8, GroupId:32, Buckets/binary>>.
 
--spec encode_ofp_flow_removed(integer(), integer(), integer()|atom(), integer(), tuple(integer(), integer()), integer(), integer(), integer(), binary()) -> binary().
+-spec encode_ofp_flow_removed(integer(), integer(), integer()|atom(), integer(), {integer(), integer()}, integer(), integer(), integer(), binary()) -> binary().
 encode_ofp_flow_removed(Cookie, Priority, Reason, TableId, {DurationSec, DurationNSec}, IdleTimeout, PacketCount, ByteCount, Match) when is_atom(Reason) ->
     Reason0 = ofp_flow_removed_reason(Reason),
     encode_ofp_flow_removed(Cookie, Priority, Reason0, TableId, {DurationSec, DurationNSec}, IdleTimeout, PacketCount, ByteCount, Match);

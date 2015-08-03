@@ -12,7 +12,7 @@
 -export([new/0, add/3, del/2, lookup/2, to_list/1]).
 
 -record(nib4, {
-	  nib4 :: array()
+	  nib4 :: array:array()
 	 }).
 
 %%%===================================================================

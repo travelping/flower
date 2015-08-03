@@ -197,8 +197,8 @@ dump_test_() ->
 -spec gb_trees_update_fun(Key, Fun, Tree1) -> Tree2 when
       Key :: term(),
       Fun :: fun(),
-      Tree1 :: gb_tree(),
-      Tree2 :: gb_tree().
+      Tree1 :: gb_trees:tree(),
+      Tree2 :: gb_trees:tree().
 
 %% derived from stdlib/gb_trees.erl
 

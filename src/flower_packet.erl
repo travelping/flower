@@ -978,7 +978,7 @@ encode_ofp_flow_mod(Match, Cookie, Command, IdleTimeout, HardTimeout, Priority,
     <<Match/binary, Cookie:64, Cmd:16, IdleTimeout:16, HardTimeout:16,
       Priority:16, BufferId:32, OutPort0:16, Flags:16, Actions/binary>>.
 
--spec encode_ofp_flow_removed(binary(), integer(), integer(), integer()|atom(), tuple(integer(), integer()), integer(), integer(), integer()) -> binary().
+-spec encode_ofp_flow_removed(binary(), integer(), integer(), integer()|atom(), {integer(), integer()}, integer(), integer(), integer()) -> binary().
 encode_ofp_flow_removed(Match, Cookie, Priority, Reason, {DurationSec, DurationNSec}, IdleTimeout, PacketCount, ByteCount) when is_atom(Reason) ->
     Reason0 = ofp_flow_removed_reason(Reason),
     encode_ofp_flow_removed(Match, Cookie, Priority, Reason0, {DurationSec, DurationNSec}, IdleTimeout, PacketCount, ByteCount);

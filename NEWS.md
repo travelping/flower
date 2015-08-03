@@ -1,6 +1,11 @@
 flower
 ======
 
+Changes with 0.3.7 - 03 Aug 2015
+--------------------------------
+
+* fix typespec's for Erlang R18
+
 Changes with 0.3.6 - 14 Jul 2015
 --------------------------------
 
